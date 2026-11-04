@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build-debug-apk:
-    name: Assemble Debug APK (Arrest Engine V0.1)
+    name: Assemble Debug APK (ArrestMe V0.3)
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -46,7 +46,17 @@ jobs:
       - name: Ensure Gradle Wrapper Executable
         run: chmod +x ./gradlew
 
+      - name: Run Unit Tests
+        env:
+          ORG_GRADLE_PROJECT_ARRESTME_API_BASE_URL: ${{ vars.ARRESTME_API_BASE_URL }}
+        run: |
+          set -o pipefail
+          mkdir -p build-logs
+          ./gradlew testDebugUnitTest --stacktrace 2>&1 | tee build-logs/gradle-testDebugUnitTest.log
+
       - name: Assemble Debug APK with Gradle Wrapper
+        env:
+          ORG_GRADLE_PROJECT_ARRESTME_API_BASE_URL: ${{ vars.ARRESTME_API_BASE_URL }}
         run: |
           set -o pipefail
           mkdir -p build-logs
@@ -55,12 +65,12 @@ jobs:
       - name: Verify Generated Debug APK Exists
         run: |
           ls -lh app/build/outputs/apk/debug/app-debug.apk
-          cp app/build/outputs/apk/debug/app-debug.apk ArrestMe-v0.1.0-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ArrestMe-v0.3.0-debug.apk
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: arrest-me-v0.1-debug-apk
+          name: arrest-me-v0.3-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
@@ -69,25 +79,25 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.0-build-${{ github.run_number }}
-          name: "Arrest Me v0.1.0 - Build #${{ github.run_number }}"
+          tag_name: v0.3.0-build-${{ github.run_number }}
+          name: "Arrest Me v0.3.0 - Build #${{ github.run_number }}"
           body: |
-            ## Arrest Me v0.1.0 Debug Build (#${{ github.run_number }})
+            ## Arrest Me v0.3.0 Debug Build (#${{ github.run_number }})
             Automated APK build from commit `${{ github.sha }}`.
 
-            ### Features in this build:
-            1. **Unbackable Arrest UI**: Rapid double-back and predictive back gesture protection at both input and accessibility filter layers.
-            2. **Status Bar & Notifications Overlay**: Extends the overlay edge-to-edge over the status bar and dismisses notification shade pulldowns.
-            3. **Whitelist Mode**: Overlay stays persistent over device home launcher and Arrest Me, hiding *only* in selected whitelist apps (e.g. Calculator, Phone).
-            4. **Disable Emergency Exit**: Option to lock the session until the countdown timer reaches 00:00.
+            ### Features in this build (V0.3 Cloud Integration + Offline Arrest Engine):
+            1. **Cloud Authentication & Profile**: Register, Sign In, Sign Out, profile synchronization (`/api/v1/users/me`), single-flight rotating refresh tokens, and Android Keystore AES-256-GCM encrypted token storage.
+            2. **Configurable Backend & Isolated Sessions**: Supports Official Server (`ARRESTME_API_BASE_URL`), Custom Self-Hosted HTTPS Backend, and Local-Only Offline mode with strictly isolated per-server sessions.
+            3. **Device Installation Registration**: Privacy-preserving random installation UUID registration (`/api/v1/devices`), metadata sync, duplicate prevention, and automatic deregistration on logout.
+            4. **100% Offline Arrest Engine**: Unbackable overlay, status-bar protection, Whitelist/Allowlist/Block-Selected modes, and strict lock timer remain completely independent of cloud connectivity.
 
             ### Download:
-            Download **`ArrestMe-v0.1.0-debug.apk`** below to install directly on your Android device.
+            Download **`ArrestMe-v0.3.0-debug.apk`** below to install directly on your Android device.
           draft: false
           prerelease: false
           make_latest: true
           files: |
-            ArrestMe-v0.1.0-debug.apk
+            ArrestMe-v0.3.0-debug.apk
             app/build/outputs/apk/debug/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

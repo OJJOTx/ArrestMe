@@ -10,7 +10,8 @@ enum class BenchmarkRoute(val route: String, val label: String) {
     APPS("apps", "Apps"),
     SESSION("session", "Session"),
     BENCHMARK("benchmark", "Results"),
-    DIAGNOSTICS("diagnostics", "Logs")
+    DIAGNOSTICS("diagnostics", "Logs"),
+    ACCOUNT("account", "Account")
 }
 
 fun formatDurationMmSs(ms: Long): String {

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
@@ -39,6 +40,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.arrestme.benchmark.ui.BenchmarkViewModel
+import com.arrestme.benchmark.ui.account.AccountScreen
 import com.arrestme.benchmark.ui.apps.AppSelectionScreen
 import com.arrestme.benchmark.ui.benchmark.BenchmarkScreen
 import com.arrestme.benchmark.ui.diagnostics.DiagnosticsScreen
@@ -87,6 +89,13 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
     val sessions by vm.sessions.collectAsStateWithLifecycle()
     val transitions by vm.transitions.collectAsStateWithLifecycle()
     val diagnosticEvents by vm.diagnosticEvents.collectAsStateWithLifecycle()
+    val backendConfig by vm.backendConfig.collectAsStateWithLifecycle()
+    val backendAuthState by vm.backendAuthState.collectAsStateWithLifecycle()
+    val healthCheckStatus by vm.healthCheckStatus.collectAsStateWithLifecycle()
+    val isTestingConnection by vm.isTestingConnection.collectAsStateWithLifecycle()
+    val isAuthBusy by vm.isAuthBusy.collectAsStateWithLifecycle()
+    val isSyncingAccount by vm.isSyncingAccount.collectAsStateWithLifecycle()
+    val authErrorMessage by vm.authErrorMessage.collectAsStateWithLifecycle()
     val statusBanner by vm.statusBanner.collectAsStateWithLifecycle()
 
     LaunchedEffect(statusBanner) {
@@ -121,6 +130,7 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
                         BenchmarkRoute.SESSION -> Icons.Default.Lock
                         BenchmarkRoute.BENCHMARK -> Icons.Default.Info
                         BenchmarkRoute.DIAGNOSTICS -> Icons.Default.Build
+                        BenchmarkRoute.ACCOUNT -> Icons.Default.AccountCircle
                     }
                     NavigationBarItem(
                         selected = currentRoute == dest.route,
@@ -144,6 +154,8 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
                         remainingMs = remainingMs,
                         appRules = appRules,
                         sessions = sessions,
+                        backendConfig = backendConfig,
+                        backendAuthState = backendAuthState,
                         onNavigate = ::navigateTo
                     )
                 }
@@ -190,6 +202,26 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
                         events = diagnosticEvents,
                         transitions = transitions,
                         onClearLogs = vm::clearDiagnosticLogs
+                    )
+                }
+                composable(BenchmarkRoute.ACCOUNT.route) {
+                    AccountScreen(
+                        config = backendConfig,
+                        authState = backendAuthState,
+                        healthCheck = healthCheckStatus,
+                        isTestingConnection = isTestingConnection,
+                        isAuthBusy = isAuthBusy,
+                        isSyncingAccount = isSyncingAccount,
+                        authErrorMessage = authErrorMessage,
+                        onDismissAuthError = vm::dismissAuthError,
+                        onLogin = vm::login,
+                        onRegister = vm::register,
+                        onLogout = vm::logout,
+                        onSyncAccount = vm::syncAccountAndDevice,
+                        onUpdateDisplayName = vm::updateDisplayName,
+                        onSetMode = vm::setBackendMode,
+                        onSaveCustomUrl = vm::saveCustomBackendUrl,
+                        onTestConnection = vm::testBackendConnection
                     )
                 }
             }

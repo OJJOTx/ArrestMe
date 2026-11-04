@@ -7,7 +7,14 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.arrestme.benchmark.ArrestMeApp
+import com.arrestme.benchmark.BuildConfig
 import com.arrestme.benchmark.core.accessibility.ArrestAccessibilityService
+import com.arrestme.benchmark.core.backend.ActiveBackendConfig
+import com.arrestme.benchmark.core.backend.BackendAuthState
+import com.arrestme.benchmark.core.backend.BackendMode
+import com.arrestme.benchmark.core.backend.CloudResult
+import com.arrestme.benchmark.core.backend.HealthCheckResult
+import com.arrestme.benchmark.core.backend.UrlValidationResult
 import com.arrestme.benchmark.core.blocking.InstalledAppInfo
 import com.arrestme.benchmark.core.permissions.PermissionStatusSnapshot
 import com.arrestme.benchmark.core.session.ActiveSessionSnapshot
@@ -57,6 +64,36 @@ class BenchmarkViewModel(application: Application) : AndroidViewModel(applicatio
 
     val diagnosticEvents: StateFlow<List<DiagnosticEventEntity>> = app.repository.observeDiagnosticEvents()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyList())
+
+    val backendConfig: StateFlow<ActiveBackendConfig> = app.backendConfigRepository.activeConfig
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000L),
+            ActiveBackendConfig(
+                mode = BackendMode.OFFLINE_LOCAL,
+                effectiveBaseUrl = null,
+                backendIdentity = "offline",
+                customUrl = "",
+                buildConfigUrl = BuildConfig.API_BASE_URL
+            )
+        )
+
+    val backendAuthState: StateFlow<BackendAuthState> = app.backendAuthRepository.authState
+
+    private val _healthCheckStatus = MutableStateFlow<HealthCheckResult?>(null)
+    val healthCheckStatus: StateFlow<HealthCheckResult?> = _healthCheckStatus.asStateFlow()
+
+    private val _isTestingConnection = MutableStateFlow(false)
+    val isTestingConnection: StateFlow<Boolean> = _isTestingConnection.asStateFlow()
+
+    private val _isAuthBusy = MutableStateFlow(false)
+    val isAuthBusy: StateFlow<Boolean> = _isAuthBusy.asStateFlow()
+
+    private val _isSyncingAccount = MutableStateFlow(false)
+    val isSyncingAccount: StateFlow<Boolean> = _isSyncingAccount.asStateFlow()
+
+    private val _authErrorMessage = MutableStateFlow<String?>(null)
+    val authErrorMessage: StateFlow<String?> = _authErrorMessage.asStateFlow()
 
     init {
         refreshPermissions()
@@ -158,6 +195,10 @@ class BenchmarkViewModel(application: Application) : AndroidViewModel(applicatio
         _statusBanner.value = null
     }
 
+    fun dismissAuthError() {
+        _authErrorMessage.value = null
+    }
+
     fun writeJsonToUri(uri: Uri) {
         viewModelScope.launch {
             runCatching {
@@ -189,13 +230,132 @@ class BenchmarkViewModel(application: Application) : AndroidViewModel(applicatio
                 val sendIntent = Intent(Intent.ACTION_SEND).apply {
                     type = "application/json"
                     putExtra(Intent.EXTRA_STREAM, uri)
-                    putExtra(Intent.EXTRA_SUBJECT, "Arrest Me V0.1 Benchmark Report")
+                    putExtra(Intent.EXTRA_SUBJECT, "Arrest Me V0.3 Benchmark Report")
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 onShareIntentReady(Intent.createChooser(sendIntent, "Export Benchmark JSON"))
             }.onFailure { e ->
                 _statusBanner.value = "Export failed: ${e.message}"
             }
+        }
+    }
+
+    fun login(email: String, password: String) {
+        if (_isAuthBusy.value) return
+        viewModelScope.launch {
+            _isAuthBusy.value = true
+            _authErrorMessage.value = null
+            when (val res = app.backendAuthRepository.login(email, password)) {
+                is CloudResult.Success -> {
+                    val handle = res.data.username ?: res.data.email ?: "account"
+                    _statusBanner.value = "Signed in as @$handle."
+                }
+                is CloudResult.Failure -> {
+                    _authErrorMessage.value = res.error.message
+                }
+            }
+            _isAuthBusy.value = false
+        }
+    }
+
+    fun register(username: String, email: String, password: String, displayName: String?) {
+        if (_isAuthBusy.value) return
+        viewModelScope.launch {
+            _isAuthBusy.value = true
+            _authErrorMessage.value = null
+            when (val res = app.backendAuthRepository.register(username, email, password, displayName)) {
+                is CloudResult.Success -> {
+                    _statusBanner.value = "Account @${res.data.username} registered and device linked."
+                }
+                is CloudResult.Failure -> {
+                    _authErrorMessage.value = res.error.message
+                }
+            }
+            _isAuthBusy.value = false
+        }
+    }
+
+    fun logout() {
+        if (_isAuthBusy.value) return
+        viewModelScope.launch {
+            _isAuthBusy.value = true
+            _authErrorMessage.value = null
+            app.backendAuthRepository.logout(deregisterDevice = true)
+            _statusBanner.value = "Signed out and deregistered device from server."
+            _isAuthBusy.value = false
+        }
+    }
+
+    fun syncAccountAndDevice() {
+        if (_isSyncingAccount.value) return
+        viewModelScope.launch {
+            _isSyncingAccount.value = true
+            _authErrorMessage.value = null
+            when (val res = app.backendAuthRepository.syncAccountAndDevice()) {
+                is CloudResult.Success -> {
+                    _statusBanner.value = "Cloud profile and device synchronized."
+                }
+                is CloudResult.Failure -> {
+                    _authErrorMessage.value = res.error.message
+                }
+            }
+            _isSyncingAccount.value = false
+        }
+    }
+
+    fun updateDisplayName(newDisplayName: String) {
+        if (_isAuthBusy.value) return
+        viewModelScope.launch {
+            _isAuthBusy.value = true
+            _authErrorMessage.value = null
+            when (val res = app.backendAuthRepository.updateDisplayName(newDisplayName)) {
+                is CloudResult.Success -> {
+                    _statusBanner.value = "Display name updated to ${res.data.displayName}."
+                }
+                is CloudResult.Failure -> {
+                    _authErrorMessage.value = res.error.message
+                }
+            }
+            _isAuthBusy.value = false
+        }
+    }
+
+    fun setBackendMode(mode: BackendMode) {
+        viewModelScope.launch {
+            _authErrorMessage.value = null
+            _healthCheckStatus.value = null
+            app.backendConfigRepository.setMode(mode)
+            _statusBanner.value = "Server mode switched to ${mode.name}."
+        }
+    }
+
+    fun saveCustomBackendUrl(url: String, onResult: (UrlValidationResult) -> Unit) {
+        viewModelScope.launch {
+            _authErrorMessage.value = null
+            _healthCheckStatus.value = null
+            val result = app.backendConfigRepository.setCustomUrl(url)
+            onResult(result)
+            if (result is UrlValidationResult.Valid) {
+                _statusBanner.value = "Custom server configured: ${result.normalizedUrl}"
+            } else if (result is UrlValidationResult.Invalid) {
+                _statusBanner.value = "URL error: ${result.reason}"
+            }
+        }
+    }
+
+    fun testBackendConnection(url: String?) {
+        val targetUrl = url ?: backendConfig.value.effectiveBaseUrl
+        if (targetUrl.isNullOrBlank()) {
+            _healthCheckStatus.value = HealthCheckResult.Error("No server URL configured to test.")
+            return
+        }
+
+        viewModelScope.launch {
+            _isTestingConnection.value = true
+            _healthCheckStatus.value = null
+            val result = app.backendApiClient.checkHealth(targetUrl)
+            _healthCheckStatus.value = result
+            _isTestingConnection.value = false
         }
     }
 

@@ -6,6 +6,14 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.arrestme.benchmark.core.accessibility.ArrestAccessibilityService
 import com.arrestme.benchmark.core.analytics.UsageMonitor
+import com.arrestme.benchmark.core.backend.AndroidDeviceMetadataProvider
+import com.arrestme.benchmark.core.backend.AndroidKeystoreSecretCipher
+import com.arrestme.benchmark.core.backend.BackendApiClient
+import com.arrestme.benchmark.core.backend.BackendAuthRepository
+import com.arrestme.benchmark.core.backend.BackendAuthState
+import com.arrestme.benchmark.core.backend.BackendConfigRepository
+import com.arrestme.benchmark.core.backend.BackendPreferencesDataSource
+import com.arrestme.benchmark.core.backend.backendDataStore
 import com.arrestme.benchmark.core.blocking.BlockingEngine
 import com.arrestme.benchmark.core.blocking.BlockingRulesEvaluator
 import com.arrestme.benchmark.core.blocking.SystemSafetyAllowlist
@@ -17,6 +25,9 @@ import com.arrestme.benchmark.core.session.SessionController
 import com.arrestme.benchmark.core.session.SessionState
 import com.arrestme.benchmark.data.local.ArrestDatabase
 import com.arrestme.benchmark.data.local.SessionSnapshotStore
+import com.arrestme.benchmark.data.remote.AndroidNetworkConnectivityChecker
+import com.arrestme.benchmark.data.remote.ArrestApiClientFactory
+import com.arrestme.benchmark.data.remote.NetworkConnectivityChecker
 import com.arrestme.benchmark.data.repository.ArrestRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,12 +71,55 @@ class ArrestMeApp : Application() {
     lateinit var persistenceManager: PersistenceManager
         private set
 
+    lateinit var connectivityChecker: NetworkConnectivityChecker
+        private set
+
+    lateinit var backendPreferencesDataSource: BackendPreferencesDataSource
+        private set
+
+    lateinit var apiClientFactory: ArrestApiClientFactory
+        private set
+
+    lateinit var backendConfigRepository: BackendConfigRepository
+        private set
+
+    lateinit var backendAuthRepository: BackendAuthRepository
+        private set
+
+    lateinit var backendApiClient: BackendApiClient
+        private set
+
     override fun onCreate() {
         super.onCreate()
 
         database = ArrestDatabase.getInstance(this)
         val snapshotStore = SessionSnapshotStore(this)
         repository = ArrestRepository(this, database, snapshotStore)
+
+        connectivityChecker = AndroidNetworkConnectivityChecker(this)
+        backendPreferencesDataSource = BackendPreferencesDataSource(
+            dataStore = backendDataStore,
+            secretCipher = AndroidKeystoreSecretCipher()
+        )
+        apiClientFactory = ArrestApiClientFactory(
+            preferencesDataSource = backendPreferencesDataSource,
+            connectivityChecker = connectivityChecker
+        )
+        backendConfigRepository = BackendConfigRepository(
+            preferencesDataSource = backendPreferencesDataSource,
+            buildConfigUrl = BuildConfig.API_BASE_URL
+        )
+        backendAuthRepository = BackendAuthRepository(
+            preferencesDataSource = backendPreferencesDataSource,
+            configRepository = backendConfigRepository,
+            scope = appScope,
+            apiClientFactory = apiClientFactory,
+            deviceMetadataProvider = AndroidDeviceMetadataProvider()
+        )
+        backendApiClient = BackendApiClient(
+            apiClientFactory = apiClientFactory,
+            connectivityChecker = connectivityChecker
+        )
 
         permissionChecker = PermissionChecker(
             context = this,
@@ -140,6 +194,18 @@ class ArrestMeApp : Application() {
                             sessionController.resumeSession(
                                 "User reopened app with blocking permissions restored"
                             )
+                        }
+                    }
+
+                    // Non-blocking background cloud profile/device sync when authenticated & online.
+                    // Strictly isolated from SessionController so offline/cloud errors never affect blocking.
+                    appScope.launch(Dispatchers.IO) {
+                        runCatching {
+                            if (backendAuthRepository.authState.value is BackendAuthState.Authenticated &&
+                                connectivityChecker.isOnline()
+                            ) {
+                                backendAuthRepository.syncAccountAndDevice()
+                            }
                         }
                     }
                 }
