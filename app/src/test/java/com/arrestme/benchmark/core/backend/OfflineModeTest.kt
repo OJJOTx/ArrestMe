@@ -75,9 +75,9 @@ class OfflineModeTest {
     @Test
     fun `offline connectivity precheck prevents network sockets and keeps local session models deterministic`() = runBlocking {
         val server = MockWebServer()
-        server.start()
+        server.start(java.net.InetAddress.getByName("127.0.0.1"), 0)
         try {
-            val baseUrl = server.url("/").toString()
+            val baseUrl = "http://127.0.0.1:${server.port}/"
             val offlineChecker = object : NetworkConnectivityChecker {
                 override fun isOnline(): Boolean = false
             }

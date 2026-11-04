@@ -39,7 +39,7 @@ class LiveHostingerIntegrationTest {
     }
 
     @Test
-    fun `end-to-end cloud verification against deployed Hostinger backend`() = runBlocking {
+    fun `end-to-end cloud verification against deployed Hostinger backend`(): Unit = runBlocking {
         val liveUrl = (
             System.getProperty("ARRESTME_LIVE_TEST_URL")
                 ?: System.getenv("ARRESTME_LIVE_TEST_URL")

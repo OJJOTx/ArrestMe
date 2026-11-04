@@ -53,7 +53,7 @@ class CloudIntegrationTest {
     fun setUp() {
         ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         server = MockWebServer()
-        server.start()
+        server.start(java.net.InetAddress.getByName("127.0.0.1"), 0)
     }
 
     @After
@@ -63,7 +63,7 @@ class CloudIntegrationTest {
     }
 
     private fun buildHarness(
-        baseUrl: String = server.url("/").toString(),
+        baseUrl: String = "http://127.0.0.1:${server.port}/",
         connectivityChecker: NetworkConnectivityChecker = AlwaysOnlineConnectivityChecker(),
         timeoutConfig: NetworkTimeoutConfig = NetworkTimeoutConfig(
             connectTimeoutMs = 2_000L,
@@ -164,7 +164,7 @@ class CloudIntegrationTest {
             password = "StrongPassword#2026",
             displayName = "Omar"
         )
-        assertTrue(regRes is CloudResult.Success)
+        assertTrue("Expected Success, got: $regRes", regRes is CloudResult.Success)
         val creds = (regRes as CloudResult.Success).data
         assertEquals("omar_focus", creds.username)
         assertEquals("Omar", creds.displayName)
@@ -172,10 +172,12 @@ class CloudIntegrationTest {
         assertNotNull(creds.registeredDevice)
         assertEquals("22222222-2222-4222-8222-222222222222", creds.registeredDevice?.id)
 
-        val req1 = server.takeRequest()
-        assertEquals("/api/v1/auth/register", req1.path)
-        val req2 = server.takeRequest()
-        assertEquals("/api/v1/devices", req2.path)
+        val req1 = server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS)
+        assertNotNull("Expected register request", req1)
+        assertEquals("/api/v1/auth/register", req1!!.path)
+        val req2 = server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS)
+        assertNotNull("Expected devices request", req2)
+        assertEquals("/api/v1/devices", req2!!.path)
         assertEquals("Bearer jwt_access_initial_123", req2.getHeader("Authorization"))
         val installId1 = authRepo.getInstallationId()
         assertTrue(req2.body.readUtf8().contains(installId1))
@@ -426,13 +428,15 @@ class CloudIntegrationTest {
         val logoutRes = authRepo.logout(deregisterDevice = true)
         assertTrue(logoutRes is CloudResult.Success)
 
-        val deleteReq = server.takeRequest()
-        assertEquals("DELETE", deleteReq.method)
+        val deleteReq = server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS)
+        assertNotNull("Expected delete device request", deleteReq)
+        assertEquals("DELETE", deleteReq!!.method)
         assertEquals("/api/v1/devices/44444444-4444-4444-8444-444444444444", deleteReq.path)
         assertEquals("Bearer active_access_token_xyz", deleteReq.getHeader("Authorization"))
 
-        val logoutReq = server.takeRequest()
-        assertEquals("POST", logoutReq.method)
+        val logoutReq = server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS)
+        assertNotNull("Expected logout request", logoutReq)
+        assertEquals("POST", logoutReq!!.method)
         assertEquals("/api/v1/auth/logout", logoutReq.path)
         assertTrue(logoutReq.body.readUtf8().contains("amrt_active_refresh_token_xyz_1234"))
 
@@ -455,7 +459,8 @@ class CloudIntegrationTest {
         val loginRes = authRepo.login("user@example.com", "ValidPassword!123")
         assertTrue(loginRes is CloudResult.Failure)
         assertEquals("POST login must not be retried", 1, server.requestCount)
-        server.takeRequest()
+        val loginReq = server.takeRequest(5, java.util.concurrent.TimeUnit.SECONDS)
+        assertNotNull("Expected login request", loginReq)
 
         dataSource.saveAuthCredentials(
             identity,
