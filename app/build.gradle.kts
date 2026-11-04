@@ -30,11 +30,40 @@ android {
         }
     }
 
+    val keystorePath = providers.gradleProperty("KEYSTORE_FILE").orNull
+        ?: System.getenv("KEYSTORE_FILE")
+    val keystoreFile = keystorePath?.let { file(it) }
+    val keystorePassword = providers.gradleProperty("KEYSTORE_PASSWORD").orNull
+        ?: System.getenv("KEYSTORE_PASSWORD")
+    val keyAliasProp = providers.gradleProperty("KEY_ALIAS").orNull
+        ?: System.getenv("KEY_ALIAS")
+    val keyPasswordProp = providers.gradleProperty("KEY_PASSWORD").orNull
+        ?: System.getenv("KEY_PASSWORD")
+
+    val hasSigningConfig = keystoreFile != null && keystoreFile.exists() &&
+        !keystorePassword.isNullOrBlank() &&
+        !keyAliasProp.isNullOrBlank() &&
+        !keyPasswordProp.isNullOrBlank()
+
+    signingConfigs {
+        if (hasSigningConfig) {
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = keystorePassword
+                keyAlias = keyAliasProp
+                keyPassword = keyPasswordProp
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ""
             versionNameSuffix = "-debug"
             isDebuggable = true
+            if (hasSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         release {
             isMinifyEnabled = false
@@ -42,6 +71,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

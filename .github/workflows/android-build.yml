@@ -46,6 +46,18 @@ jobs:
       - name: Ensure Gradle Wrapper Executable
         run: chmod +x ./gradlew
 
+      - name: Decode Release Keystore
+        if: env.KEYSTORE_BASE64 != ''
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p secrets
+          echo "$KEYSTORE_BASE64" | base64 --decode > secrets/release.keystore
+          echo "KEYSTORE_FILE=$(pwd)/secrets/release.keystore" >> $GITHUB_ENV
+          echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
+          echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
+          echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
+
       - name: Run Unit Tests
         env:
           ORG_GRADLE_PROJECT_ARRESTME_API_BASE_URL: ${{ vars.ARRESTME_API_BASE_URL }}
@@ -54,24 +66,36 @@ jobs:
           mkdir -p build-logs
           ./gradlew testDebugUnitTest --stacktrace 2>&1 | tee build-logs/gradle-testDebugUnitTest.log
 
-      - name: Assemble Debug APK with Gradle Wrapper
+      - name: Assemble APK with Gradle Wrapper
         env:
           ORG_GRADLE_PROJECT_ARRESTME_API_BASE_URL: ${{ vars.ARRESTME_API_BASE_URL }}
         run: |
           set -o pipefail
           mkdir -p build-logs
-          ./gradlew assembleDebug --stacktrace 2>&1 | tee build-logs/gradle-assembleDebug.log
+          if [ -n "$KEYSTORE_FILE" ] && [ -f "$KEYSTORE_FILE" ]; then
+            echo "Signing with persistent release keystore..."
+            ./gradlew assembleRelease --stacktrace 2>&1 | tee build-logs/gradle-assemble.log
+            cp app/build/outputs/apk/release/app-release.apk ArrestMe-v0.3.0.apk
+            cp ArrestMe-v0.3.0.apk ArrestMe-v0.3.0-debug.apk
+          else
+            echo "Release keystore secrets not detected; building assembleDebug..."
+            ./gradlew assembleDebug --stacktrace 2>&1 | tee build-logs/gradle-assemble.log
+            cp app/build/outputs/apk/debug/app-debug.apk ArrestMe-v0.3.0-debug.apk
+            cp ArrestMe-v0.3.0-debug.apk ArrestMe-v0.3.0.apk
+          fi
 
-      - name: Verify Generated Debug APK Exists
+      - name: Verify Generated APK Exists
         run: |
-          ls -lh app/build/outputs/apk/debug/app-debug.apk
-          cp app/build/outputs/apk/debug/app-debug.apk ArrestMe-v0.3.0-debug.apk
+          ls -lh ArrestMe-v0.3.0.apk
+          ls -lh ArrestMe-v0.3.0-debug.apk
 
-      - name: Upload Debug APK Artifact
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: arrest-me-v0.3-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: arrest-me-v0.3-apk
+          path: |
+            ArrestMe-v0.3.0.apk
+            ArrestMe-v0.3.0-debug.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -82,7 +106,7 @@ jobs:
           tag_name: v0.3.0-build-${{ github.run_number }}
           name: "Arrest Me v0.3.0 - Build #${{ github.run_number }}"
           body: |
-            ## Arrest Me v0.3.0 Debug Build (#${{ github.run_number }})
+            ## Arrest Me v0.3.0 Release Build (#${{ github.run_number }})
             Automated APK build from commit `${{ github.sha }}`.
 
             ### Features in this build (V0.3 Cloud Integration + Offline Arrest Engine):
@@ -90,15 +114,16 @@ jobs:
             2. **Configurable Backend & Isolated Sessions**: Supports Official Server (`ARRESTME_API_BASE_URL`), Custom Self-Hosted HTTPS Backend, and Local-Only Offline mode with strictly isolated per-server sessions.
             3. **Device Installation Registration**: Privacy-preserving random installation UUID registration (`/api/v1/devices`), metadata sync, duplicate prevention, and automatic deregistration on logout.
             4. **100% Offline Arrest Engine**: Unbackable overlay, status-bar protection, Whitelist/Allowlist/Block-Selected modes, and strict lock timer remain completely independent of cloud connectivity.
+            5. **Persistent Release Signing**: Signed with a persistent cryptographic certificate across all GitHub CI builds to support seamless over-the-air in-place updates.
 
             ### Download:
-            Download **`ArrestMe-v0.3.0-debug.apk`** below to install directly on your Android device.
+            Download **`ArrestMe-v0.3.0.apk`** below to install directly on your Android device.
           draft: false
           prerelease: false
           make_latest: true
           files: |
+            ArrestMe-v0.3.0.apk
             ArrestMe-v0.3.0-debug.apk
-            app/build/outputs/apk/debug/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
