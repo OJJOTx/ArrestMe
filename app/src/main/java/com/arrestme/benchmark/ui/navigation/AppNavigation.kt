@@ -1,0 +1,27 @@
+package com.arrestme.benchmark.ui.navigation
+
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+enum class BenchmarkRoute(val route: String, val label: String) {
+    HOME("home", "Home"),
+    PERMISSIONS("permissions", "Perms"),
+    APPS("apps", "Apps"),
+    SESSION("session", "Session"),
+    BENCHMARK("benchmark", "Results"),
+    DIAGNOSTICS("diagnostics", "Logs")
+}
+
+fun formatDurationMmSs(ms: Long): String {
+    val totalSec = (ms.coerceAtLeast(0L) + 999L) / 1000L
+    val min = totalSec / 60L
+    val sec = totalSec % 60L
+    return String.format(Locale.US, "%02d:%02d", min, sec)
+}
+
+fun formatWallClockTime(epochMs: Long): String {
+    if (epochMs <= 0L) return "-"
+    val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+    return sdf.format(Date(epochMs))
+}
