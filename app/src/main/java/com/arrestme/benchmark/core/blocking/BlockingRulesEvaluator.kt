@@ -39,18 +39,58 @@ class BlockingRulesEvaluator(
         packageName: String,
         session: ActiveSessionSnapshot?,
         blockedPackages: Set<String>,
-        allowedStudyPackages: Set<String>
+        allowedStudyPackages: Set<String>,
+        isRecentsWindow: Boolean = false
     ): BlockingDecision {
         if (packageName.isBlank()) {
             return BlockingDecision.IgnoreTransientWindow("Empty package name")
         }
 
-        if (safetyAllowlist.isOwnPackage(packageName)) {
-            return BlockingDecision.AllowArrestMeApp
+        if (!isRecentsWindow && safetyAllowlist.isTransientSystemOrImePackage(packageName)) {
+            return BlockingDecision.IgnoreTransientWindow("Transient system UI or IME window ($packageName)")
         }
 
-        if (safetyAllowlist.isTransientSystemOrImePackage(packageName)) {
-            return BlockingDecision.IgnoreTransientWindow("Transient system UI or IME window ($packageName)")
+        if (session == null || session.state != SessionState.ACTIVE || session.hasExpired()) {
+            return BlockingDecision.AllowUnlistedApp
+        }
+
+        // Whitelist Mode: Arrest UI stays active even over Home Launcher & Arrest Me,
+        // hiding ONLY inside explicitly whitelisted apps (e.g., Calculator or Phone).
+        if (session.ruleMode == BlockingRuleMode.WHITELIST_ONLY) {
+            if (safetyAllowlist.isEmergencySafetyPackage(packageName)) {
+                return BlockingDecision.AllowEssentialSystem(
+                    "Emergency SOS package ($packageName)"
+                )
+            }
+
+            if (packageName in allowedStudyPackages) {
+                return BlockingDecision.AllowPermittedApp("Whitelisted app ($packageName)")
+            }
+
+            if (safetyAllowlist.isInCallUiOrTelecomPackage(packageName) &&
+                allowedStudyPackages.any { safetyAllowlist.isDialerPackage(it) }
+            ) {
+                return BlockingDecision.AllowPermittedApp(
+                    "In-call UI permitted for whitelisted Phone app"
+                )
+            }
+
+            val appLabel = when {
+                safetyAllowlist.isOwnPackage(packageName) -> "Arrest Me"
+                safetyAllowlist.isHomeLauncher(packageName) -> "Home Launcher"
+                isRecentsWindow -> "Recent Apps"
+                else -> resolveAppLabel(packageName)
+            }
+
+            return BlockingDecision.BlockApp(
+                packageName = packageName,
+                appLabel = appLabel,
+                reason = "Whitelist Mode: Arrest UI stays active over $appLabel and hides ONLY in selected whitelist apps."
+            )
+        }
+
+        if (safetyAllowlist.isOwnPackage(packageName)) {
+            return BlockingDecision.AllowArrestMeApp
         }
 
         if (safetyAllowlist.isEssentialSafetyOrDialer(packageName)) {
@@ -61,10 +101,6 @@ class BlockingRulesEvaluator(
 
         if (safetyAllowlist.isHomeLauncher(packageName)) {
             return BlockingDecision.AllowHomeLauncher
-        }
-
-        if (session == null || session.state != SessionState.ACTIVE || session.hasExpired()) {
-            return BlockingDecision.AllowUnlistedApp
         }
 
         // Explicitly allowed study apps take precedence when Study Apps category is active
@@ -95,6 +131,14 @@ class BlockingRulesEvaluator(
                     reason = "$appLabel ($packageName) is outside allowed categories (${
                         session.allowedCategories.joinToString(", ") { it.label }
                     })."
+                )
+            }
+            BlockingRuleMode.WHITELIST_ONLY -> {
+                // Handled above
+                BlockingDecision.BlockApp(
+                    packageName = packageName,
+                    appLabel = appLabel,
+                    reason = "Whitelist Mode active."
                 )
             }
         }

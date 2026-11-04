@@ -15,31 +15,45 @@ import android.view.inputmethod.InputMethodManager
 class SystemSafetyAllowlist(context: Context) {
     private val appContext = context.applicationContext
 
-    private val staticEssentialPackages = setOf(
+    private val emergencyPackages = setOf(
+        "com.android.emergency",
+        "com.google.android.apps.safetyhub"
+    )
+
+    private val inCallUiAndTelecomPackages = setOf(
+        "com.android.phone",
+        "com.android.server.telecom",
+        "com.android.incallui",
+        "com.samsung.android.incallui"
+    )
+
+    private val staticDialerPackages = setOf(
+        "com.android.dialer",
+        "com.google.android.dialer",
+        "com.samsung.android.dialer",
+        "com.android.contacts",
+        "com.samsung.android.app.contacts"
+    )
+
+    private val systemManagementPackages = setOf(
         "com.android.settings",
-        "com.android.permissioncontroller",
-        "com.google.android.permissioncontroller",
         "com.android.packageinstaller",
         "com.google.android.packageinstaller",
         "com.samsung.android.packageinstaller",
         "com.miui.packageinstaller",
         "com.miui.securitycenter",
         "com.coloros.safecenter",
-        "com.oplus.safecenter",
-        "com.android.phone",
-        "com.android.server.telecom",
-        "com.android.incallui",
-        "com.samsung.android.incallui",
-        "com.android.dialer",
-        "com.google.android.dialer",
-        "com.samsung.android.dialer",
-        "com.android.emergency",
-        "com.google.android.apps.safetyhub"
+        "com.oplus.safecenter"
     )
+
+    private val staticEssentialPackages =
+        emergencyPackages + inCallUiAndTelecomPackages + staticDialerPackages + systemManagementPackages
 
     private val transientSystemWindowPackages = setOf(
         "android",
-        "com.android.systemui"
+        "com.android.systemui",
+        "com.android.permissioncontroller",
+        "com.google.android.permissioncontroller"
     )
 
     fun isOwnPackage(packageName: String): Boolean = packageName == appContext.packageName
@@ -51,6 +65,19 @@ class SystemSafetyAllowlist(context: Context) {
 
     fun isHomeLauncher(packageName: String): Boolean {
         return packageName in queryHomeLauncherPackages()
+    }
+
+    fun isEmergencySafetyPackage(packageName: String): Boolean {
+        return packageName in emergencyPackages
+    }
+
+    fun isInCallUiOrTelecomPackage(packageName: String): Boolean {
+        return packageName in inCallUiAndTelecomPackages
+    }
+
+    fun isDialerPackage(packageName: String): Boolean {
+        if (packageName in staticDialerPackages) return true
+        return packageName in queryDialerPackages()
     }
 
     fun isEssentialSafetyOrDialer(packageName: String): Boolean {

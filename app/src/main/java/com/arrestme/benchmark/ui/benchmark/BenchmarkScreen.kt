@@ -180,6 +180,11 @@ private fun SessionBenchmarkCard(s: SessionEntity) {
             }
             Text("Goal: ${s.goal}", style = MaterialTheme.typography.bodySmall)
             Text(
+                text = "Mode: ${s.ruleMode} • StatusBar Overlay: ${if (s.overlayStatusBar) "ON" else "OFF"} • Emergency Exit: ${if (s.disableEmergencyExit) "Disabled" else "Enabled"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
                 text = "Start: ${formatWallClockTime(s.startTimestampMs)} • Configured: ${configuredMin}m • Elapsed: ${actualDurationSec}s",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

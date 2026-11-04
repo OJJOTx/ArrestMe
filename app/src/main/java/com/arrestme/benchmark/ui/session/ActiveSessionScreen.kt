@@ -2,6 +2,8 @@ package com.arrestme.benchmark.ui.session
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,9 +19,11 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,6 +51,7 @@ import com.arrestme.benchmark.ui.navigation.BenchmarkRoute
 import com.arrestme.benchmark.ui.navigation.formatDurationMmSs
 import com.arrestme.benchmark.ui.navigation.formatWallClockTime
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ActiveSessionScreen(
     activeSession: ActiveSessionSnapshot?,
@@ -65,14 +70,21 @@ fun ActiveSessionScreen(
     var allowCalls by rememberSaveable { mutableStateOf(true) }
     var allowStudyApps by rememberSaveable { mutableStateOf(true) }
     var ruleModeName by rememberSaveable { mutableStateOf(BlockingRuleMode.BLOCK_SELECTED.name) }
+    var overlayStatusBar by rememberSaveable { mutableStateOf(false) }
+    var disableEmergencyExit by rememberSaveable { mutableStateOf(false) }
     var showEmergencyConfirm by remember { mutableStateOf(false) }
 
     val blockedCount = appRules.count { it.ruleType == AppRuleType.BLOCKED.name }
     val allowedStudyCount = appRules.count { it.ruleType == AppRuleType.ALLOWED_STUDY.name }
+    val whitelistedLabels = remember(appRules) {
+        appRules.filter { it.ruleType == AppRuleType.ALLOWED_STUDY.name }
+            .map { it.appLabel }
+            .sorted()
+    }
     val selectedRuleMode = runCatching { BlockingRuleMode.valueOf(ruleModeName) }
         .getOrDefault(BlockingRuleMode.BLOCK_SELECTED)
 
-    if (showEmergencyConfirm) {
+    if (showEmergencyConfirm && activeSession?.disableEmergencyExit != true) {
         AlertDialog(
             onDismissRequest = { showEmergencyConfirm = false },
             title = { Text("Confirm Emergency Exit") },
@@ -143,12 +155,24 @@ fun ActiveSessionScreen(
                     Text("Session ID: ${activeSession.sessionId}")
                     Text("Type: ${activeSession.sessionType.label}")
                     Text("Goal: ${activeSession.goal}")
+                    Text("Rule Mode: ${activeSession.ruleMode.label}")
+                    if (activeSession.ruleMode != BlockingRuleMode.WHITELIST_ONLY) {
+                        Text(
+                            "Allowed Categories: ${
+                                activeSession.allowedCategories.joinToString(", ") { it.label }
+                            }"
+                        )
+                    }
                     Text(
-                        "Allowed Categories: ${
-                            activeSession.allowedCategories.joinToString(", ") { it.label }
+                        "Status Bar & Notification Overlay: ${
+                            if (activeSession.overlayStatusBar) "Enabled" else "Standard"
                         }"
                     )
-                    Text("Rule Mode: ${activeSession.ruleMode.label}")
+                    Text(
+                        "Emergency Exit: ${
+                            if (activeSession.disableEmergencyExit) "Disabled (Strict Lock)" else "Enabled"
+                        }"
+                    )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Persisted Start: ${formatWallClockTime(activeSession.startTimestampMs)}",
@@ -174,34 +198,50 @@ fun ActiveSessionScreen(
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (activeSession.state == SessionState.ACTIVE) {
-                            OutlinedButton(
-                                onClick = onPauseSession,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Pause")
-                            }
-                        } else if (activeSession.state == SessionState.PAUSED ||
-                            activeSession.state == SessionState.INTERRUPTED
-                        ) {
+                    if (activeSession.disableEmergencyExit) {
+                        if (activeSession.state == SessionState.INTERRUPTED) {
                             Button(
                                 onClick = onResumeSession,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text("Resume Session")
                             }
                         }
-
-                        Button(
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
-                            onClick = { showEmergencyConfirm = true },
-                            modifier = Modifier.weight(1f)
+                        Text(
+                            text = "Emergency Exit and Pause are disabled for this session. Session unlocks automatically at 00:00.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFFDE047)
+                        )
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("Emergency Exit", color = Color.White)
+                            if (activeSession.state == SessionState.ACTIVE) {
+                                OutlinedButton(
+                                    onClick = onPauseSession,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Pause")
+                                }
+                            } else if (activeSession.state == SessionState.PAUSED ||
+                                activeSession.state == SessionState.INTERRUPTED
+                            ) {
+                                Button(
+                                    onClick = onResumeSession,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Resume Session")
+                                }
+                            }
+
+                            Button(
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                                onClick = { showEmergencyConfirm = true },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Emergency Exit", color = Color.White)
+                            }
                         }
                     }
                 }
@@ -243,7 +283,7 @@ fun ActiveSessionScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Grant Overlay + Accessibility before starting a benchmark session so blocked apps trigger the overlay.",
+                            text = "Grant Overlay + Accessibility before starting a session so the Arrest UI can enforce restrictions.",
                             style = MaterialTheme.typography.bodySmall
                         )
                         Spacer(modifier = Modifier.height(6.dp))
@@ -266,12 +306,12 @@ fun ActiveSessionScreen(
                             color = Color(0xFFFDE047)
                         )
                         Text(
-                            text = "Select at least 2 applications to block for testing Scenarios #2–#6.",
+                            text = "Select applications to block in the Apps screen, or switch to Whitelist Mode.",
                             style = MaterialTheme.typography.bodySmall
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         OutlinedButton(onClick = { onNavigate(BenchmarkRoute.APPS) }) {
-                            Text("Select Blocked & Study Apps")
+                            Text("Select Blocked & Whitelist Apps")
                         }
                     }
                 }
@@ -296,9 +336,9 @@ fun ActiveSessionScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Text("Duration (Default Benchmark = 15 min; 1 min preset for fast expiry test):")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(1, 5, 15, 30).forEach { mins ->
+                    Text("Duration:")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(1, 5, 15, 30, 60).forEach { mins ->
                             FilterChip(
                                 selected = durationMinutes == mins,
                                 onClick = { durationMinutes = mins },
@@ -307,18 +347,8 @@ fun ActiveSessionScreen(
                         }
                     }
 
-                    Text("Allowed Categories:")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = allowCalls, onCheckedChange = { allowCalls = it })
-                        Text("Calls (Phone Dialer always protected)")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = allowStudyApps, onCheckedChange = { allowStudyApps = it })
-                        Text("Study Apps ($allowedStudyCount configured)")
-                    }
-
                     Text("Blocking Rule Mode:")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         BlockingRuleMode.entries.forEach { mode ->
                             FilterChip(
                                 selected = selectedRuleMode == mode,
@@ -333,6 +363,97 @@ fun ActiveSessionScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
+                    if (selectedRuleMode == BlockingRuleMode.WHITELIST_ONLY) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "Whitelisted Apps ($allowedStudyCount selected)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF38BDF8)
+                                )
+                                Text(
+                                    text = if (whitelistedLabels.isEmpty()) {
+                                        "None selected — Arrest UI will cover everything (including Launcher) until timer ends. Go to Apps to whitelist Calculator, Phone, etc."
+                                    } else {
+                                        "Arrest UI hides ONLY in: ${whitelistedLabels.joinToString(", ")}"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                OutlinedButton(onClick = { onNavigate(BenchmarkRoute.APPS) }) {
+                                    Text("Choose Whitelisted Apps")
+                                }
+                            }
+                        }
+                    } else {
+                        Text("Allowed Categories:")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = allowCalls, onCheckedChange = { allowCalls = it })
+                            Text("Calls (Phone Dialer always protected)")
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = allowStudyApps, onCheckedChange = { allowStudyApps = it })
+                            Text("Whitelisted / Study Apps ($allowedStudyCount configured)")
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    // Option: Overlay Status Bar & Notification Shade
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(
+                                text = "Overlay Status Bar & Notifications",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Extends Arrest UI edge-to-edge over the status bar and hides/collapses the notification shade.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = overlayStatusBar,
+                            onCheckedChange = { overlayStatusBar = it }
+                        )
+                    }
+
+                    // Option: Disable Emergency Exit
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(
+                                text = "Disable Emergency Exit",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Removes the Emergency Exit option so the session cannot be stopped before the timer ends.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (disableEmergencyExit) Color(0xFFFCA5A5) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = disableEmergencyExit,
+                            onCheckedChange = { disableEmergencyExit = it }
+                        )
+                    }
+
                     Button(
                         onClick = {
                             val categories = buildSet {
@@ -345,7 +466,9 @@ fun ActiveSessionScreen(
                                     durationMinutes = durationMinutes,
                                     goal = goalText.ifBlank { "Finish studying chapter 3" },
                                     allowedCategories = categories,
-                                    ruleMode = selectedRuleMode
+                                    ruleMode = selectedRuleMode,
+                                    overlayStatusBar = overlayStatusBar,
+                                    disableEmergencyExit = disableEmergencyExit
                                 )
                             )
                         },

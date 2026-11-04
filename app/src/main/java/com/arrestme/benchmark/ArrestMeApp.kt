@@ -104,6 +104,7 @@ class ArrestMeApp : Application() {
         )
 
         blockingEngine = BlockingEngine(
+            context = this,
             repository = repository,
             sessionController = sessionController,
             rulesEvaluator = rulesEvaluator,

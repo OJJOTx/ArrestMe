@@ -2,6 +2,8 @@ package com.arrestme.benchmark.ui.apps
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,10 +36,11 @@ import com.arrestme.benchmark.data.local.AppRuleType
 private enum class AppListFilter(val label: String) {
     ALL("All"),
     BLOCKED("Blocked"),
-    ALLOWED_STUDY("Study Allowlist"),
-    PROTECTED("System Safe")
+    ALLOWED_STUDY("Whitelist / Allow"),
+    PROTECTED("System / Launcher")
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppSelectionScreen(
     installedApps: List<InstalledAppInfo>,
@@ -92,7 +95,7 @@ fun AppSelectionScreen(
 
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Mark apps as Blocked (triggers overlay) or Study Allowlist (openable from overlay). Phone Dialer, Settings, and Launcher remain permanently protected.",
+            text = "Mark apps as Blocked (for Block Selected mode) or Whitelist / Allow (apps where Arrest UI hides in Whitelist Mode, such as Calculator or Phone).",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -101,13 +104,13 @@ fun AppSelectionScreen(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            label = { Text("Search installed apps or package") },
+            label = { Text("Search installed apps or package (e.g. Calculator, Phone)") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(8.dp))
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -143,17 +146,36 @@ fun AppSelectionScreen(
 
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        if (app.isEssentialProtected || app.isHomeLauncher) {
+                        if (app.isHomeLauncher) {
                             Text(
-                                text = if (app.isHomeLauncher) {
-                                    "Protected Home Launcher (Never Blocked)"
-                                } else {
-                                    "Protected System / Dialer / Safety App (Never Blocked)"
-                                },
+                                text = "Device Home Launcher (Permitted in standard modes • Covered by Arrest UI in Whitelist Mode)",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF34D399),
+                                color = Color(0xFF38BDF8),
                                 fontWeight = FontWeight.SemiBold
                             )
+                        } else if (app.isEssentialProtected) {
+                            Text(
+                                text = "System / Dialer App — Protected in standard modes; tap 'Whitelist / Allow' to permit in Whitelist Mode:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF34D399)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilterChip(
+                                    selected = currentRule != AppRuleType.ALLOWED_STUDY.name,
+                                    onClick = { onSetRule(app.packageName, app.label, null) },
+                                    label = { Text("Not Whitelisted") }
+                                )
+                                FilterChip(
+                                    selected = currentRule == AppRuleType.ALLOWED_STUDY.name,
+                                    onClick = {
+                                        onSetRule(app.packageName, app.label, AppRuleType.ALLOWED_STUDY)
+                                    },
+                                    label = { Text("Whitelist / Allow") }
+                                )
+                            }
                         } else {
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -175,7 +197,7 @@ fun AppSelectionScreen(
                                     onClick = {
                                         onSetRule(app.packageName, app.label, AppRuleType.ALLOWED_STUDY)
                                     },
-                                    label = { Text("Study Allow") }
+                                    label = { Text("Whitelist / Allow") }
                                 )
                             }
                         }

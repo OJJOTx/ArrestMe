@@ -216,9 +216,11 @@ class UsageMonitor(
                     .ifEmpty { setOf(AllowedCategory.CALLS, AllowedCategory.STUDY_APPS) },
                 ruleMode = runCatching { BlockingRuleMode.valueOf(session.ruleMode) }
                     .getOrDefault(BlockingRuleMode.BLOCK_SELECTED),
+                overlayStatusBar = session.overlayStatusBar,
+                disableEmergencyExit = session.disableEmergencyExit,
                 configuredDurationMs = session.configuredDurationMs,
                 startTimestampMs = session.startTimestampMs,
-                endTimestampMs = endWindow + 60_000L,
+                endTimestampMs = max(System.currentTimeMillis(), endWindow) + 60_000L,
                 pausedAtTimestampMs = null,
                 accumulatedPausedMs = session.accumulatedPausedMs,
                 startElapsedRealtimeMs = session.startElapsedRealtimeMs,

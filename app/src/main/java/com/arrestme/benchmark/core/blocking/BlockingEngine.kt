@@ -1,23 +1,33 @@
 package com.arrestme.benchmark.core.blocking
 
+import android.content.Context
 import android.os.SystemClock
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.arrestme.benchmark.core.analytics.UsageMonitor
 import com.arrestme.benchmark.core.monitoring.AntiCheatingMonitor
 import com.arrestme.benchmark.core.monitoring.MonitorEventType
 import com.arrestme.benchmark.core.overlay.OverlayManager
 import com.arrestme.benchmark.core.overlay.OverlayRequest
 import com.arrestme.benchmark.core.permissions.PermissionChecker
+import com.arrestme.benchmark.core.session.ActiveSessionSnapshot
+import com.arrestme.benchmark.core.session.BlockingRuleMode
 import com.arrestme.benchmark.core.session.SessionController
+import com.arrestme.benchmark.core.session.SessionLifecycleObserver
 import com.arrestme.benchmark.core.session.SessionState
 import com.arrestme.benchmark.data.local.EventSeverity
 import com.arrestme.benchmark.data.repository.ArrestRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class BlockingEngine(
+    context: Context,
     private val repository: ArrestRepository,
     private val sessionController: SessionController,
     private val rulesEvaluator: BlockingRulesEvaluator,
@@ -26,20 +36,100 @@ class BlockingEngine(
     private val permissionChecker: PermissionChecker,
     private val antiCheatingMonitor: AntiCheatingMonitor,
     private val scope: CoroutineScope
-) {
+) : SessionLifecycleObserver {
+    private val appContext = context.applicationContext
     private val switchTimestampsMs = ArrayDeque<Long>()
     private var lastObservedDistinctPackage: String? = null
     private var lastRapidSwitchAlertMs: Long = 0L
 
+    private var launchingFromPackage: String? = null
+    private var launchingTargetPackage: String? = null
+    private var launchGraceUntilElapsedMs: Long = 0L
+    private var launchVerifyJob: Job? = null
+
     private val _lastForegroundPackage = MutableStateFlow<String?>(null)
     val lastForegroundPackage: StateFlow<String?> = _lastForegroundPackage.asStateFlow()
+
+    init {
+        overlayManager.onLaunchingPermittedApp = { fromPkg, targetPkg ->
+            notifyPermittedAppLaunching(fromPkg, targetPkg)
+        }
+        sessionController.registerObserver(this)
+    }
+
+    override fun onSessionUpdated(snapshot: ActiveSessionSnapshot?) {
+        if (snapshot != null &&
+            snapshot.state == SessionState.ACTIVE &&
+            !snapshot.hasExpired() &&
+            snapshot.ruleMode == BlockingRuleMode.WHITELIST_ONLY
+        ) {
+            scope.launch(Dispatchers.Main.immediate) {
+                val appInFg = runCatching {
+                    ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                }.getOrDefault(false)
+                val targetPkg = if (appInFg) {
+                    appContext.packageName
+                } else {
+                    _lastForegroundPackage.value ?: appContext.packageName
+                }
+                onForegroundPackageChanged(
+                    packageName = targetPkg,
+                    detectionElapsedNanos = SystemClock.elapsedRealtimeNanos()
+                )
+            }
+        }
+    }
+
+    @Synchronized
+    fun notifyPermittedAppLaunching(fromBlockedPackage: String?, targetPermittedPackage: String) {
+        launchingFromPackage = fromBlockedPackage
+        launchingTargetPackage = targetPermittedPackage
+        launchGraceUntilElapsedMs = SystemClock.elapsedRealtime() + LAUNCH_GRACE_MS
+        launchVerifyJob?.cancel()
+        launchVerifyJob = scope.launch {
+            delay(LAUNCH_GRACE_MS + 40L)
+            recheckAfterLaunchGrace(fromBlockedPackage)
+        }
+    }
+
+    @Synchronized
+    private fun recheckAfterLaunchGrace(expectedBlockedPkg: String?) {
+        launchGraceUntilElapsedMs = 0L
+        val currentFg = _lastForegroundPackage.value ?: expectedBlockedPkg ?: return
+        launchingFromPackage = null
+        launchingTargetPackage = null
+        if (!overlayManager.isOverlayShowing.value) {
+            onForegroundPackageChanged(
+                packageName = currentFg,
+                detectionElapsedNanos = SystemClock.elapsedRealtimeNanos()
+            )
+        }
+    }
 
     @Synchronized
     fun onForegroundPackageChanged(
         packageName: String,
-        detectionElapsedNanos: Long = SystemClock.elapsedRealtimeNanos()
+        detectionElapsedNanos: Long = SystemClock.elapsedRealtimeNanos(),
+        isRecentsWindow: Boolean = false
     ) {
         if (packageName.isBlank()) return
+
+        val nowElapsed = SystemClock.elapsedRealtime()
+        if (nowElapsed < launchGraceUntilElapsedMs) {
+            val target = launchingTargetPackage
+            val matchedTarget = target != null && (
+                packageName == target ||
+                    (target == "*dialer*" && rulesEvaluator.safetyAllowlist.isDialerPackage(packageName))
+                )
+            if (matchedTarget) {
+                launchGraceUntilElapsedMs = 0L
+                launchingFromPackage = null
+                launchingTargetPackage = null
+                launchVerifyJob?.cancel()
+            } else if (launchingFromPackage != null && packageName == launchingFromPackage) {
+                return
+            }
+        }
 
         val session = sessionController.activeSession.value
             ?: repository.snapshotStore.readSnapshot()
@@ -68,7 +158,8 @@ class BlockingEngine(
             packageName = packageName,
             session = session,
             blockedPackages = blockedPackages,
-            allowedStudyPackages = allowedStudyPackages
+            allowedStudyPackages = allowedStudyPackages,
+            isRecentsWindow = isRecentsWindow
         )
 
         if (decision is BlockingDecision.IgnoreTransientWindow) {
@@ -178,6 +269,7 @@ class BlockingEngine(
     }
 
     companion object {
+        private const val LAUNCH_GRACE_MS = 800L
         private const val RAPID_SWITCH_WINDOW_MS = 6_000L
         private const val RAPID_SWITCH_THRESHOLD = 5
         private const val RAPID_SWITCH_COOLDOWN_MS = 6_000L

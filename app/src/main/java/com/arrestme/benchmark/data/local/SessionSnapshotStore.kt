@@ -37,6 +37,8 @@ class SessionSnapshotStore(context: Context) {
                 snapshot.allowedCategories.joinToString(",") { it.name }
             )
             editor.putString(KEY_RULE_MODE, snapshot.ruleMode.name)
+            editor.putBoolean(KEY_OVERLAY_STATUS_BAR, snapshot.overlayStatusBar)
+            editor.putBoolean(KEY_DISABLE_EMERGENCY_EXIT, snapshot.disableEmergencyExit)
             editor.putLong(KEY_CONFIGURED_DURATION_MS, snapshot.configuredDurationMs)
             editor.putLong(KEY_START_TS, snapshot.startTimestampMs)
             editor.putLong(KEY_END_TS, snapshot.endTimestampMs)
@@ -85,6 +87,8 @@ class SessionSnapshotStore(context: Context) {
             goal = prefs.getString(KEY_GOAL, "Finish studying chapter 3") ?: "Finish studying chapter 3",
             allowedCategories = categories,
             ruleMode = ruleMode,
+            overlayStatusBar = prefs.getBoolean(KEY_OVERLAY_STATUS_BAR, false),
+            disableEmergencyExit = prefs.getBoolean(KEY_DISABLE_EMERGENCY_EXIT, false),
             configuredDurationMs = prefs.getLong(KEY_CONFIGURED_DURATION_MS, 15 * 60_000L),
             startTimestampMs = prefs.getLong(KEY_START_TS, 0L),
             endTimestampMs = prefs.getLong(KEY_END_TS, 0L),
@@ -135,6 +139,8 @@ class SessionSnapshotStore(context: Context) {
         private const val KEY_GOAL = "goal"
         private const val KEY_ALLOWED_CATEGORIES = "allowed_categories"
         private const val KEY_RULE_MODE = "rule_mode"
+        private const val KEY_OVERLAY_STATUS_BAR = "overlay_status_bar"
+        private const val KEY_DISABLE_EMERGENCY_EXIT = "disable_emergency_exit"
         private const val KEY_CONFIGURED_DURATION_MS = "configured_duration_ms"
         private const val KEY_START_TS = "start_ts"
         private const val KEY_END_TS = "end_ts"

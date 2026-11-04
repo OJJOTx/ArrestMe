@@ -180,6 +180,8 @@ class ArrestRepository(
                         put("goal", s.goal)
                         put("allowed_categories", s.allowedCategoriesCsv)
                         put("rule_mode", s.ruleMode)
+                        put("overlay_status_bar", s.overlayStatusBar)
+                        put("disable_emergency_exit", s.disableEmergencyExit)
                         put("configured_duration_ms", s.configuredDurationMs)
                         put("start_timestamp_ms", s.startTimestampMs)
                         put("start_timestamp_iso", formatIsoUtc(s.startTimestampMs))

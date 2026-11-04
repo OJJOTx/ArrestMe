@@ -241,6 +241,8 @@ class SessionController(
                 goal = config.goal.ifBlank { "Finish studying chapter 3" },
                 allowedCategories = config.allowedCategories,
                 ruleMode = config.ruleMode,
+                overlayStatusBar = config.overlayStatusBar,
+                disableEmergencyExit = config.disableEmergencyExit,
                 configuredDurationMs = config.durationMs,
                 startTimestampMs = startWall,
                 endTimestampMs = endWall,
@@ -258,6 +260,8 @@ class SessionController(
                 goal = activeSnapshot.goal,
                 allowedCategoriesCsv = config.allowedCategories.joinToString(",") { it.name },
                 ruleMode = config.ruleMode.name,
+                overlayStatusBar = config.overlayStatusBar,
+                disableEmergencyExit = config.disableEmergencyExit,
                 configuredDurationMs = config.durationMs,
                 startTimestampMs = startWall,
                 endTimestampMs = endWall,
@@ -308,6 +312,15 @@ class SessionController(
         controllerMutex.withLock {
             val current = _activeSession.value ?: return@withLock
             if (current.state != SessionState.ACTIVE) return@withLock
+            if (current.disableEmergencyExit) {
+                antiCheatingMonitor.recordEvent(
+                    type = MonitorEventType.SESSION_STATE_CHANGED,
+                    sessionId = current.sessionId,
+                    severity = EventSeverity.WARNING,
+                    details = "Pause blocked because Emergency Exit is disabled for this session"
+                )
+                return@withLock
+            }
             val now = System.currentTimeMillis()
             if (current.hasExpired(now)) {
                 completeSessionLocked(current, now, "Expired right before pause request")
@@ -427,6 +440,15 @@ class SessionController(
         controllerMutex.withLock {
             val current = _activeSession.value ?: repository.snapshotStore.readSnapshot() ?: return@withLock
             if (!current.state.isInProgress) return@withLock
+            if (current.disableEmergencyExit) {
+                antiCheatingMonitor.recordEvent(
+                    type = MonitorEventType.EMERGENCY_EXIT,
+                    sessionId = current.sessionId,
+                    severity = EventSeverity.WARNING,
+                    details = "Emergency stop refused because Emergency Exit is disabled for session ${current.sessionId}"
+                )
+                return@withLock
+            }
             val now = System.currentTimeMillis()
             val endPerms = permissionChecker.inspectAll().toCompactString()
 
@@ -684,6 +706,8 @@ class SessionController(
             allowedCategories = categories,
             ruleMode = runCatching { BlockingRuleMode.valueOf(ruleMode) }
                 .getOrDefault(BlockingRuleMode.BLOCK_SELECTED),
+            overlayStatusBar = overlayStatusBar,
+            disableEmergencyExit = disableEmergencyExit,
             configuredDurationMs = configuredDurationMs,
             startTimestampMs = startTimestampMs,
             endTimestampMs = endTimestampMs,

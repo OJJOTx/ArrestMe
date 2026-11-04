@@ -36,6 +36,8 @@ data class SessionEntity(
     val goal: String,
     val allowedCategoriesCsv: String,
     val ruleMode: String,
+    val overlayStatusBar: Boolean = false,
+    val disableEmergencyExit: Boolean = false,
     val configuredDurationMs: Long,
     val startTimestampMs: Long,
     val endTimestampMs: Long,

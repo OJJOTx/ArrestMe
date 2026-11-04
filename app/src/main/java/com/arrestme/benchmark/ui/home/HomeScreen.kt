@@ -148,7 +148,7 @@ fun HomeScreen(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                Text("Blocked Apps Selected: $blockedCount  |  Allowed Study Apps: $allowedCount")
+                Text("Blocked Apps Selected: $blockedCount  |  Whitelisted / Allowed Apps: $allowedCount")
                 Text("Recorded Benchmark Sessions: ${sessions.size}")
 
                 Row(

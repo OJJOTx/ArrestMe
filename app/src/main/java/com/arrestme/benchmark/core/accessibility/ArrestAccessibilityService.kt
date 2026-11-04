@@ -2,7 +2,9 @@ package com.arrestme.benchmark.core.accessibility
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.os.Build
 import android.os.SystemClock
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import com.arrestme.benchmark.ArrestMeApp
 import com.arrestme.benchmark.MainActivity
@@ -38,6 +40,7 @@ class ArrestAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
         _isConnected.value = true
 
         val app = application as? ArrestMeApp ?: return
@@ -64,6 +67,20 @@ class ArrestAccessibilityService : AccessibilityService() {
         }
     }
 
+    override fun onKeyEvent(event: KeyEvent?): Boolean {
+        if (event != null &&
+            (event.keyCode == KeyEvent.KEYCODE_BACK || event.keyCode == KeyEvent.KEYCODE_ESCAPE)
+        ) {
+            val app = application as? ArrestMeApp
+            if (app?.overlayManager?.isOverlayShowing?.value == true) {
+                // Consume all Back key actions (down, up, repeat, rapid double-back)
+                // at the Accessibility input layer so neither Arrest UI nor underlying app exits.
+                return true
+            }
+        }
+        return super.onKeyEvent(event)
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             return
@@ -71,6 +88,7 @@ class ArrestAccessibilityService : AccessibilityService() {
 
         val pkg = event.packageName?.toString()?.takeIf { it.isNotBlank() } ?: return
         val cls = event.className?.toString().orEmpty()
+        val app = application as? ArrestMeApp ?: return
 
         // Ignore our own overlay window or internal dialogs; only pass MainActivity for our own package
         if (pkg == packageName && cls != MainActivity::class.java.name && !cls.endsWith(".MainActivity")) {
@@ -82,10 +100,26 @@ class ArrestAccessibilityService : AccessibilityService() {
             return
         }
 
+        // Handle SystemUI notification shade vs legacy Recents window
+        val isSystemUiRecents = pkg == "com.android.systemui" && cls.contains("Recents", ignoreCase = true)
+        if (pkg == "com.android.systemui" && !isSystemUiRecents) {
+            val activeSnap = app.sessionController.activeSession.value
+            if (activeSnap?.state == SessionState.ACTIVE &&
+                activeSnap.overlayStatusBar &&
+                app.overlayManager.isOverlayShowing.value
+            ) {
+                dismissNotificationShade()
+            }
+            return
+        }
+
         val nowElapsedMs = SystemClock.elapsedRealtime()
 
-        // Suppress duplicate window-state events for the same foreground package within debounce interval
-        if (pkg == lastDispatchedPackage && (nowElapsedMs - lastDispatchedElapsedMs) < SAME_PACKAGE_SUPPRESS_MS) {
+        // Suppress duplicate window-state events for the same foreground package only when overlay state is already stable
+        if (pkg == lastDispatchedPackage &&
+            app.overlayManager.isOverlayShowing.value &&
+            (nowElapsedMs - lastDispatchedElapsedMs) < SAME_PACKAGE_SUPPRESS_MS
+        ) {
             return
         }
 
@@ -95,12 +129,22 @@ class ArrestAccessibilityService : AccessibilityService() {
             lastDispatchedPackage = pkg
             lastDispatchedElapsedMs = SystemClock.elapsedRealtime()
 
-            val app = application as? ArrestMeApp ?: return@launch
+            val currentApp = application as? ArrestMeApp ?: return@launch
             val triggerStartNanos = SystemClock.elapsedRealtimeNanos()
-            app.blockingEngine.onForegroundPackageChanged(
+            currentApp.blockingEngine.onForegroundPackageChanged(
                 packageName = pkg,
-                detectionElapsedNanos = triggerStartNanos
+                detectionElapsedNanos = triggerStartNanos,
+                isRecentsWindow = isSystemUiRecents
             )
+        }
+    }
+
+    fun dismissNotificationShade() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching { performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE) }
+        } else {
+            @Suppress("DEPRECATION")
+            runCatching { sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)) }
         }
     }
 
@@ -150,18 +194,28 @@ class ArrestAccessibilityService : AccessibilityService() {
                 }
             }
         }
+        if (instance === this) {
+            instance = null
+        }
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
+        if (instance === this) {
+            instance = null
+        }
         _isConnected.value = false
         serviceScope.cancel()
         super.onDestroy()
     }
 
     companion object {
-        private const val SAME_PACKAGE_SUPPRESS_MS = 350L
+        private const val SAME_PACKAGE_SUPPRESS_MS = 150L
         private const val BURST_DEBOUNCE_MS = 35L
+
+        @Volatile
+        var instance: ArrestAccessibilityService? = null
+            private set
 
         private val _isConnected = MutableStateFlow(false)
         val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
