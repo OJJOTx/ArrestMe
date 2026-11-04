@@ -13,6 +13,7 @@ import com.arrestme.benchmark.core.backend.BackendAuthRepository
 import com.arrestme.benchmark.core.backend.BackendAuthState
 import com.arrestme.benchmark.core.backend.BackendConfigRepository
 import com.arrestme.benchmark.core.backend.BackendPreferencesDataSource
+import com.arrestme.benchmark.core.backend.PartnerSystemRepository
 import com.arrestme.benchmark.core.backend.backendDataStore
 import com.arrestme.benchmark.core.blocking.BlockingEngine
 import com.arrestme.benchmark.core.blocking.BlockingRulesEvaluator
@@ -89,6 +90,9 @@ class ArrestMeApp : Application() {
     lateinit var backendApiClient: BackendApiClient
         private set
 
+    lateinit var partnerSystemRepository: PartnerSystemRepository
+        private set
+
     override fun onCreate() {
         super.onCreate()
 
@@ -119,6 +123,13 @@ class ArrestMeApp : Application() {
         backendApiClient = BackendApiClient(
             apiClientFactory = apiClientFactory,
             connectivityChecker = connectivityChecker
+        )
+        partnerSystemRepository = PartnerSystemRepository(
+            preferencesDataSource = backendPreferencesDataSource,
+            configRepository = backendConfigRepository,
+            authRepository = backendAuthRepository,
+            apiClientFactory = apiClientFactory,
+            scope = appScope
         )
 
         permissionChecker = PermissionChecker(

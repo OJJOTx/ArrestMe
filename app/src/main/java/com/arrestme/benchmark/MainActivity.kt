@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -35,10 +36,13 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.arrestme.benchmark.core.backend.BackendAuthState
 import com.arrestme.benchmark.ui.BenchmarkViewModel
 import com.arrestme.benchmark.ui.account.AccountScreen
 import com.arrestme.benchmark.ui.apps.AppSelectionScreen
@@ -46,6 +50,14 @@ import com.arrestme.benchmark.ui.benchmark.BenchmarkScreen
 import com.arrestme.benchmark.ui.diagnostics.DiagnosticsScreen
 import com.arrestme.benchmark.ui.home.HomeScreen
 import com.arrestme.benchmark.ui.navigation.BenchmarkRoute
+import com.arrestme.benchmark.ui.navigation.PartnerSubRoutes
+import com.arrestme.benchmark.ui.partners.ArrestProposalBuilderScreen
+import com.arrestme.benchmark.ui.partners.NegotiationDetailsScreen
+import com.arrestme.benchmark.ui.partners.PartnerApprovalSettingsScreen
+import com.arrestme.benchmark.ui.partners.PartnerDetailsScreen
+import com.arrestme.benchmark.ui.partners.PartnerRequestsScreen
+import com.arrestme.benchmark.ui.partners.PartnersScreen
+import com.arrestme.benchmark.ui.partners.ScheduledArrestsScreen
 import com.arrestme.benchmark.ui.permissions.PermissionsScreen
 import com.arrestme.benchmark.ui.session.ActiveSessionScreen
 import com.arrestme.benchmark.ui.theme.ArrestMeTheme
@@ -98,6 +110,20 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
     val authErrorMessage by vm.authErrorMessage.collectAsStateWithLifecycle()
     val statusBanner by vm.statusBanner.collectAsStateWithLifecycle()
 
+    // V0.4 Partner System state
+    val partners by vm.partners.collectAsStateWithLifecycle()
+    val incomingRequests by vm.incomingPartnerRequests.collectAsStateWithLifecycle()
+    val outgoingRequests by vm.outgoingPartnerRequests.collectAsStateWithLifecycle()
+    val pendingCounts by vm.pendingCounts.collectAsStateWithLifecycle()
+    val myInviteCode by vm.myInviteCode.collectAsStateWithLifecycle()
+    val discoveryResult by vm.discoveryResult.collectAsStateWithLifecycle()
+    val selectedPartnerProfile by vm.selectedPartnerProfile.collectAsStateWithLifecycle()
+    val proposals by vm.proposals.collectAsStateWithLifecycle()
+    val selectedProposal by vm.selectedProposal.collectAsStateWithLifecycle()
+    val scheduledArrests by vm.scheduledArrests.collectAsStateWithLifecycle()
+    val isPartnerLoading by vm.isPartnerSystemLoading.collectAsStateWithLifecycle()
+    val partnerErrorMessage by vm.partnerErrorMessage.collectAsStateWithLifecycle()
+
     LaunchedEffect(statusBanner) {
         val msg = statusBanner ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(msg)
@@ -128,6 +154,7 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
                         BenchmarkRoute.PERMISSIONS -> Icons.Default.CheckCircle
                         BenchmarkRoute.APPS -> Icons.Default.List
                         BenchmarkRoute.SESSION -> Icons.Default.Lock
+                        BenchmarkRoute.PARTNERS -> Icons.Default.Person
                         BenchmarkRoute.BENCHMARK -> Icons.Default.Info
                         BenchmarkRoute.DIAGNOSTICS -> Icons.Default.Build
                         BenchmarkRoute.ACCOUNT -> Icons.Default.AccountCircle
@@ -136,7 +163,7 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
                         selected = currentRoute == dest.route,
                         onClick = { navigateTo(dest) },
                         icon = { Icon(icon, contentDescription = dest.label) },
-                        label = { Text(dest.label, fontSize = 10.sp, maxLines = 1) }
+                        label = { Text(dest.label, fontSize = 9.sp, maxLines = 1) }
                     )
                 }
             }
@@ -187,6 +214,156 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
                         onEmergencyStop = vm::emergencyStopSession,
                         onResetIdle = vm::resetFinishedSessionToIdle,
                         onNavigate = ::navigateTo
+                    )
+                }
+                composable(BenchmarkRoute.PARTNERS.route) {
+                    PartnersScreen(
+                        authState = backendAuthState,
+                        partners = partners,
+                        pendingCounts = pendingCounts,
+                        myInviteCode = myInviteCode,
+                        discoveryResult = discoveryResult,
+                        proposals = proposals,
+                        scheduledArrests = scheduledArrests,
+                        isLoading = isPartnerLoading,
+                        errorMessage = partnerErrorMessage,
+                        onRefresh = vm::refreshPartnerSystem,
+                        onDismissError = vm::dismissPartnerError,
+                        onRegenerateInviteCode = vm::regenerateInviteCode,
+                        onDiscoverPartner = vm::discoverPartner,
+                        onClearDiscovery = vm::clearDiscoveryResult,
+                        onSendPartnerRequest = vm::sendPartnerRequest,
+                        onOpenPartnerRequests = {
+                            navController.navigate(PartnerSubRoutes.PARTNER_REQUESTS)
+                        },
+                        onOpenPartnerDetails = { partnershipId ->
+                            navController.navigate(PartnerSubRoutes.partnerDetails(partnershipId))
+                        },
+                        onOpenNegotiationDetails = { proposalId ->
+                            navController.navigate(PartnerSubRoutes.negotiationDetails(proposalId))
+                        },
+                        onOpenScheduledArrests = {
+                            navController.navigate(PartnerSubRoutes.SCHEDULED_ARRESTS)
+                        },
+                        onOpenAccountSettings = {
+                            navigateTo(BenchmarkRoute.ACCOUNT)
+                        }
+                    )
+                }
+                composable(PartnerSubRoutes.PARTNER_REQUESTS) {
+                    PartnerRequestsScreen(
+                        incomingRequests = incomingRequests,
+                        outgoingRequests = outgoingRequests,
+                        isLoading = isPartnerLoading,
+                        errorMessage = partnerErrorMessage,
+                        onAcceptRequest = vm::acceptPartnerRequest,
+                        onRejectRequest = vm::rejectPartnerRequest,
+                        onCancelOutgoingRequest = { id -> vm.removeOrCancelPartnership(id) },
+                        onBlockUser = { id -> vm.blockPartner(id) },
+                        onRefresh = vm::refreshPartnerSystem,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = PartnerSubRoutes.PARTNER_DETAILS,
+                    arguments = listOf(navArgument("partnershipId") { type = NavType.StringType })
+                ) { entry ->
+                    val partnershipId = entry.arguments?.getString("partnershipId").orEmpty()
+                    PartnerDetailsScreen(
+                        partnershipId = partnershipId,
+                        profile = selectedPartnerProfile,
+                        isLoading = isPartnerLoading,
+                        errorMessage = partnerErrorMessage,
+                        onLoadProfile = vm::loadPartnerProfile,
+                        onOpenApprovalSettings = { id ->
+                            navController.navigate(PartnerSubRoutes.partnerApprovalSettings(id))
+                        },
+                        onOpenCreateProposal = { id ->
+                            navController.navigate(PartnerSubRoutes.proposalBuilder(id))
+                        },
+                        onOpenNegotiationDetails = { propId ->
+                            navController.navigate(PartnerSubRoutes.negotiationDetails(propId))
+                        },
+                        onRevokePermission = vm::revokePermission,
+                        onRemovePartner = { id ->
+                            vm.removeOrCancelPartnership(id) {
+                                navController.popBackStack()
+                            }
+                        },
+                        onBlockPartner = { id ->
+                            vm.blockPartner(id) {
+                                navController.popBackStack()
+                            }
+                        },
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = PartnerSubRoutes.PARTNER_APPROVAL_SETTINGS,
+                    arguments = listOf(navArgument("partnershipId") { type = NavType.StringType })
+                ) { entry ->
+                    val partnershipId = entry.arguments?.getString("partnershipId").orEmpty()
+                    PartnerApprovalSettingsScreen(
+                        partnershipId = partnershipId,
+                        profile = selectedPartnerProfile,
+                        isLoading = isPartnerLoading,
+                        errorMessage = partnerErrorMessage,
+                        onLoadProfile = vm::loadPartnerProfile,
+                        onUpdateApprovalPolicy = vm::updateApprovalPolicy,
+                        onGrantStandingPermission = vm::grantStandingPermission,
+                        onRevokePermission = vm::revokePermission,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = PartnerSubRoutes.PROPOSAL_BUILDER,
+                    arguments = listOf(navArgument("partnershipId") { type = NavType.StringType })
+                ) { entry ->
+                    val partnershipId = entry.arguments?.getString("partnershipId").orEmpty()
+                    ArrestProposalBuilderScreen(
+                        partnershipId = partnershipId,
+                        profile = selectedPartnerProfile,
+                        localAppRules = appRules,
+                        isLoading = isPartnerLoading,
+                        errorMessage = partnerErrorMessage,
+                        onLoadProfile = vm::loadPartnerProfile,
+                        onSubmitProposal = vm::submitProposal,
+                        onProposalCreated = { proposalId ->
+                            navController.navigate(PartnerSubRoutes.negotiationDetails(proposalId)) {
+                                popUpTo(PartnerSubRoutes.PROPOSAL_BUILDER) { inclusive = true }
+                            }
+                        },
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = PartnerSubRoutes.NEGOTIATION_DETAILS,
+                    arguments = listOf(navArgument("proposalId") { type = NavType.StringType })
+                ) { entry ->
+                    val proposalId = entry.arguments?.getString("proposalId").orEmpty()
+                    val currentUserId = (backendAuthState as? BackendAuthState.Authenticated)?.credentials?.userId
+                    NegotiationDetailsScreen(
+                        proposalId = proposalId,
+                        currentUserId = currentUserId,
+                        proposal = selectedProposal,
+                        isLoading = isPartnerLoading,
+                        errorMessage = partnerErrorMessage,
+                        onLoadProposal = vm::loadProposalDetails,
+                        onAcceptProposal = vm::acceptProposal,
+                        onRejectProposal = vm::rejectProposal,
+                        onCancelProposal = vm::cancelProposal,
+                        onCounterofferProposal = { id, req -> vm.counterofferProposal(id, req) },
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(PartnerSubRoutes.SCHEDULED_ARRESTS) {
+                    ScheduledArrestsScreen(
+                        schedules = scheduledArrests,
+                        isLoading = isPartnerLoading,
+                        errorMessage = partnerErrorMessage,
+                        onCancelSchedule = vm::cancelScheduledArrest,
+                        onRefresh = vm::refreshPartnerSystem,
+                        onBack = { navController.popBackStack() }
                     )
                 }
                 composable(BenchmarkRoute.BENCHMARK.route) {

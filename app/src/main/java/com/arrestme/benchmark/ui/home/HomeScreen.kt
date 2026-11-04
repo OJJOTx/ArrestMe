@@ -129,14 +129,28 @@ fun HomeScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(onClick = { onNavigate(BenchmarkRoute.ACCOUNT) }) {
-                    Text(
-                        when (backendAuthState) {
-                            is BackendAuthState.Authenticated -> "Manage Account & Server"
-                            is BackendAuthState.Unauthenticated -> "Sign In / Configure Server"
-                            is BackendAuthState.Offline -> "Configure Cloud Server"
-                        }
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { onNavigate(BenchmarkRoute.ACCOUNT) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            when (backendAuthState) {
+                                is BackendAuthState.Authenticated -> "Account & Server"
+                                is BackendAuthState.Unauthenticated -> "Sign In / Server"
+                                is BackendAuthState.Offline -> "Cloud Server"
+                            }
+                        )
+                    }
+                    Button(
+                        onClick = { onNavigate(BenchmarkRoute.PARTNERS) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Partners & Proposals")
+                    }
                 }
             }
         }

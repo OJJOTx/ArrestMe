@@ -9,9 +9,24 @@ enum class BenchmarkRoute(val route: String, val label: String) {
     PERMISSIONS("permissions", "Perms"),
     APPS("apps", "Apps"),
     SESSION("session", "Session"),
+    PARTNERS("partners", "Partners"),
     BENCHMARK("benchmark", "Results"),
     DIAGNOSTICS("diagnostics", "Logs"),
     ACCOUNT("account", "Account")
+}
+
+object PartnerSubRoutes {
+    const val PARTNER_REQUESTS = "partner_requests"
+    const val SCHEDULED_ARRESTS = "scheduled_arrests"
+    const val PARTNER_DETAILS = "partner_details/{partnershipId}"
+    const val PARTNER_APPROVAL_SETTINGS = "partner_approval_settings/{partnershipId}"
+    const val PROPOSAL_BUILDER = "proposal_builder/{partnershipId}"
+    const val NEGOTIATION_DETAILS = "negotiation_details/{proposalId}"
+
+    fun partnerDetails(partnershipId: String) = "partner_details/$partnershipId"
+    fun partnerApprovalSettings(partnershipId: String) = "partner_approval_settings/$partnershipId"
+    fun proposalBuilder(partnershipId: String) = "proposal_builder/$partnershipId"
+    fun negotiationDetails(proposalId: String) = "negotiation_details/$proposalId"
 }
 
 fun formatDurationMmSs(ms: Long): String {
