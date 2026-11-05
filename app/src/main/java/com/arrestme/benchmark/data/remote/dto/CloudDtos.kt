@@ -279,6 +279,7 @@ data class PartnerPermissionDto(
     val targetDevice: SafeDeviceSummaryDto,
     val proposalId: String? = null,
     val approvedRevision: Int? = null,
+    val boundSessionId: String? = null,
     val exactBlockingConfiguration: ExactApprovedSessionConfigDto? = null,
     val maximumSessionDuration: Int,
     val allowedTimeWindows: AllowedTimeWindowsDto? = null,

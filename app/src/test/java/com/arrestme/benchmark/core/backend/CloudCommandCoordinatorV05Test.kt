@@ -180,6 +180,16 @@ class CloudCommandCoordinatorV05Test {
         override suspend fun applyTemporaryAppAccessOverride(grantId: String, packageName: String, expiresAtWallMs: Long) {}
         override suspend fun revokeTemporaryAppAccessOverride(grantId: String) {}
         override suspend fun extendActiveSession(extensionMs: Long) {}
+
+        val diagnosticEvents = mutableListOf<String>()
+        override suspend fun recordDiagnosticEvent(
+            eventType: String,
+            details: String,
+            severity: String,
+            sessionId: String?
+        ) {
+            diagnosticEvents.add("$severity: [$eventType] $details")
+        }
     }
 
     private data class V05CoordinatorHarness(
@@ -569,5 +579,354 @@ class CloudCommandCoordinatorV05Test {
         assertFalse(requestBody.contains("com.arrestme.benchmark"))
         assertTrue(requestBody.contains("com.instagram.android"))
         assertTrue(requestBody.contains("org.anki.droid"))
+    }
+
+    @Test
+    fun `consumed one-time permission for approved immediate arrest executes successfully`() = runBlocking {
+        val harness = buildCoordinatorHarness(clockTimeMs = 1793865600000L) // 2026-11-05T08:00:00Z
+        val authId = "44444444-4444-4444-8444-444444444444"
+        val cloudSessionId = "55555555-5555-4555-8555-555555555555"
+        val proposalId = "99999999-9999-4999-8999-999999999999"
+        val commandId = "66666666-6666-4666-8666-666666666666"
+
+        // 1. Response for listPartnerPermissions: one-time permission already consumed by immediate start
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """
+                {
+                  "items": [
+                    {
+                      "permissionId": "$authId",
+                      "owner": { "id": "${harness.myUserId}", "username": "owner_bob", "displayName": "Bob Owner" },
+                      "partner": { "id": "${harness.partnerUserId}", "username": "partner_alice", "displayName": "Alice Partner" },
+                      "targetDevice": { "id": "${harness.myDeviceId}", "deviceName": "Bob Pixel 8", "platform": "ANDROID", "deviceStatus": "ACTIVE" },
+                      "proposalId": "$proposalId",
+                      "approvedRevision": 1,
+                      "boundSessionId": "$cloudSessionId",
+                      "exactBlockingConfiguration": {
+                        "sessionType": "PARTNER_ARREST",
+                        "goal": "Urgent Math Study",
+                        "durationMinutes": 30,
+                        "blockingConfiguration": {
+                          "schemaVersion": 1,
+                          "ruleMode": "BLOCK_SELECTED",
+                          "allowedCategories": ["CALLS", "STUDY_APPS"],
+                          "overlayStatusBar": false,
+                          "disableEmergencyExit": true,
+                          "blockedPackages": ["com.tiktok.android"],
+                          "allowedStudyPackages": ["org.anki.droid"]
+                        }
+                      },
+                      "maximumSessionDuration": 30,
+                      "allowedSessionTypes": ["PARTNER_ARREST"],
+                      "oneTimeOnly": true,
+                      "usedCount": 1,
+                      "version": 1,
+                      "isCurrentlyActive": false,
+                      "validFrom": "2026-11-05T00:00:00.000Z",
+                      "expiresAt": "2026-11-06T00:00:00.000Z"
+                    }
+                  ],
+                  "total": 1,
+                  "limit": 100,
+                  "offset": 0
+                }
+                """.trimIndent()
+            )
+        )
+
+        // 2. Response for pollDeviceCommands (START_ARREST command queued for this exact session)
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """
+                {
+                  "items": [
+                    {
+                      "commandId": "$commandId",
+                      "sequenceNo": 1,
+                      "sessionId": "$cloudSessionId",
+                      "targetDeviceId": "${harness.myDeviceId}",
+                      "issuedByUserId": "${harness.partnerUserId}",
+                      "commandType": "START_ARREST",
+                      "payload": {
+                        "schemaVersion": 1,
+                        "sessionId": "$cloudSessionId",
+                        "proposalId": "$proposalId",
+                        "approvedRevision": 1,
+                        "authorizationId": "$authId",
+                        "initiatedByUserId": "${harness.partnerUserId}",
+                        "sessionType": "PARTNER_ARREST",
+                        "durationMinutes": 30,
+                        "goal": "Urgent Math Study",
+                        "ruleMode": "BLOCK_SELECTED",
+                        "allowedCategories": ["CALLS", "STUDY_APPS"],
+                        "overlayStatusBar": false,
+                        "disableEmergencyExit": true,
+                        "blockedPackages": ["com.tiktok.android"],
+                        "allowedStudyPackages": ["org.anki.droid"]
+                      },
+                      "status": "PENDING",
+                      "expiresAt": "2026-11-05T08:30:00.000Z"
+                    }
+                  ],
+                  "nextSequenceCursor": 1
+                }
+                """.trimIndent()
+            )
+        )
+
+        // 3. Response for acknowledgeSession (ACCEPTED -> PREPARING)
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{ "session": { "sessionId": "$cloudSessionId", "status": "DELIVERED", "remoteExecutionPhase": "EXECUTING" } }"""
+            )
+        )
+
+        // 4. Response for acknowledgeSession (STARTED -> ACTIVE)
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{ "session": { "sessionId": "$cloudSessionId", "status": "ACTIVE", "remoteExecutionPhase": "ACTIVE" } }"""
+            )
+        )
+
+        // 5. Response for acknowledgeCommand (EXECUTED)
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{ "command": { "commandId": "$commandId", "status": "EXECUTED" }, "idempotentReplay": false }"""
+            )
+        )
+
+        val result = harness.coordinator.pollAndExecutePendingCommands()
+        assertTrue(result is CloudResult.Success)
+
+        // Verify local engine started correctly
+        val active = harness.fakeBridge.activeSession.value
+        assertNotNull(active)
+        assertEquals(SessionType.PARTNER_ARREST, active?.sessionType)
+        assertEquals("Urgent Math Study", active?.goal)
+        assertEquals(cloudSessionId, active?.cloudSessionId)
+        assertEquals(authId, active?.authorizationId)
+        assertEquals(harness.partnerUserId, active?.controllingPartnerUserId)
+
+        // Verify diagnostics recorded
+        assertTrue(harness.fakeBridge.diagnosticEvents.any { it.contains("AUTHORIZATION_VALIDATION") && it.contains("succeeded") })
+        assertTrue(harness.fakeBridge.diagnosticEvents.any { it.contains("LOCAL_SESSION_STARTUP") && it.contains("Started local session") })
+        assertTrue(harness.fakeBridge.diagnosticEvents.any { it.contains("COMMAND_ACKNOWLEDGMENT") && it.contains("EXECUTED") })
+    }
+
+    @Test
+    fun `replaying completed command cannot start another session`() = runBlocking {
+        val harness = buildCoordinatorHarness(clockTimeMs = 1793865600000L)
+        val cloudSessionId = "55555555-5555-4555-8555-555555555555"
+        val commandId = "66666666-6666-4666-8666-666666666666"
+
+        // Mark this cloudSessionId as already completed on device
+        harness.fakeBridge.saveCloudToLocalSessionMapping(cloudSessionId, "old_completed_local_id")
+
+        // 1. Response for listPartnerPermissions
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{ "items": [], "total": 0, "limit": 100, "offset": 0 }"""))
+
+        // 2. Poll commands: replaying the same command
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """
+                {
+                  "items": [
+                    {
+                      "commandId": "$commandId",
+                      "sequenceNo": 5,
+                      "sessionId": "$cloudSessionId",
+                      "targetDeviceId": "${harness.myDeviceId}",
+                      "issuedByUserId": "${harness.partnerUserId}",
+                      "commandType": "START_ARREST",
+                      "payload": {
+                        "sessionId": "$cloudSessionId",
+                        "sessionType": "PARTNER_ARREST",
+                        "durationMinutes": 30
+                      },
+                      "status": "PENDING",
+                      "expiresAt": "2026-11-05T08:30:00.000Z"
+                    }
+                  ],
+                  "nextSequenceCursor": 5
+                }
+                """.trimIndent()
+            )
+        )
+
+        // 3. Response for acknowledgeSession (REJECTED)
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{ "session": { "sessionId": "$cloudSessionId", "status": "REJECTED" } }"""))
+
+        // 4. Response for acknowledgeCommand (REJECTED)
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{ "command": { "commandId": "$commandId", "status": "REJECTED" } }"""))
+
+        val result = harness.coordinator.pollAndExecutePendingCommands()
+        assertTrue(result is CloudResult.Success)
+
+        // Must NOT start active session
+        assertNull(harness.fakeBridge.activeSession.value)
+        assertTrue(harness.fakeBridge.diagnosticEvents.any { it.contains("COMMAND_REPLAY_REJECTED") })
+    }
+
+    @Test
+    fun `consumed one-time permission bound to different session is rejected`() = runBlocking {
+        val harness = buildCoordinatorHarness(clockTimeMs = 1793865600000L)
+        val authId = "44444444-4444-4444-8444-444444444444"
+        val legitimateSessionId = "11111111-1111-4111-8111-111111111111"
+        val attackerSessionId = "22222222-2222-4222-8222-222222222222"
+        val commandId = "66666666-6666-4666-8666-666666666666"
+
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """
+                {
+                  "items": [
+                    {
+                      "permissionId": "$authId",
+                      "owner": { "id": "${harness.myUserId}", "username": "owner_bob", "displayName": "Bob Owner" },
+                      "partner": { "id": "${harness.partnerUserId}", "username": "partner_alice", "displayName": "Alice Partner" },
+                      "targetDevice": { "id": "${harness.myDeviceId}", "deviceName": "Bob Pixel 8", "platform": "ANDROID", "deviceStatus": "ACTIVE" },
+                      "boundSessionId": "$legitimateSessionId",
+                      "maximumSessionDuration": 30,
+                      "allowedSessionTypes": ["PARTNER_ARREST"],
+                      "oneTimeOnly": true,
+                      "usedCount": 1,
+                      "version": 1,
+                      "isCurrentlyActive": false,
+                      "validFrom": "2026-11-05T00:00:00.000Z",
+                      "expiresAt": "2026-11-06T00:00:00.000Z"
+                    }
+                  ],
+                  "total": 1,
+                  "limit": 100,
+                  "offset": 0
+                }
+                """.trimIndent()
+            )
+        )
+
+        // Poll command referencing the wrong session ID
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """
+                {
+                  "items": [
+                    {
+                      "commandId": "$commandId",
+                      "sequenceNo": 6,
+                      "sessionId": "$attackerSessionId",
+                      "targetDeviceId": "${harness.myDeviceId}",
+                      "issuedByUserId": "${harness.partnerUserId}",
+                      "commandType": "START_ARREST",
+                      "payload": {
+                        "sessionId": "$attackerSessionId",
+                        "authorizationId": "$authId",
+                        "sessionType": "PARTNER_ARREST",
+                        "durationMinutes": 30
+                      },
+                      "status": "PENDING",
+                      "expiresAt": "2026-11-05T08:30:00.000Z"
+                    }
+                  ],
+                  "nextSequenceCursor": 6
+                }
+                """.trimIndent()
+            )
+        )
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{ "session": { "sessionId": "$attackerSessionId", "status": "REJECTED" } }"""))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{ "command": { "commandId": "$commandId", "status": "REJECTED" } }"""))
+
+        val result = harness.coordinator.pollAndExecutePendingCommands()
+        assertTrue(result is CloudResult.Success)
+        assertNull(harness.fakeBridge.activeSession.value)
+        assertTrue(harness.fakeBridge.diagnosticEvents.any { it.contains("AUTHORIZATION_VALIDATION") && it.contains("already been consumed for another session") })
+    }
+
+    @Test
+    fun `tampered configuration in command is rejected`() = runBlocking {
+        val harness = buildCoordinatorHarness(clockTimeMs = 1793865600000L)
+        val authId = "44444444-4444-4444-8444-444444444444"
+        val cloudSessionId = "55555555-5555-4555-8555-555555555555"
+        val commandId = "66666666-6666-4666-8666-666666666666"
+
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """
+                {
+                  "items": [
+                    {
+                      "permissionId": "$authId",
+                      "owner": { "id": "${harness.myUserId}", "username": "owner_bob", "displayName": "Bob Owner" },
+                      "partner": { "id": "${harness.partnerUserId}", "username": "partner_alice", "displayName": "Alice Partner" },
+                      "targetDevice": { "id": "${harness.myDeviceId}", "deviceName": "Bob Pixel 8", "platform": "ANDROID", "deviceStatus": "ACTIVE" },
+                      "boundSessionId": "$cloudSessionId",
+                      "exactBlockingConfiguration": {
+                        "sessionType": "PARTNER_ARREST",
+                        "goal": "Focus",
+                        "durationMinutes": 30,
+                        "blockingConfiguration": {
+                          "schemaVersion": 1,
+                          "ruleMode": "BLOCK_SELECTED",
+                          "allowedCategories": ["CALLS"]
+                        }
+                      },
+                      "maximumSessionDuration": 30,
+                      "allowedSessionTypes": ["PARTNER_ARREST"],
+                      "oneTimeOnly": true,
+                      "usedCount": 1,
+                      "version": 1,
+                      "isCurrentlyActive": false,
+                      "validFrom": "2026-11-05T00:00:00.000Z",
+                      "expiresAt": "2026-11-06T00:00:00.000Z"
+                    }
+                  ],
+                  "total": 1,
+                  "limit": 100,
+                  "offset": 0
+                }
+                """.trimIndent()
+            )
+        )
+
+        // Attacker tampered durationMinutes: changed from approved 30 to 60
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """
+                {
+                  "items": [
+                    {
+                      "commandId": "$commandId",
+                      "sequenceNo": 7,
+                      "sessionId": "$cloudSessionId",
+                      "targetDeviceId": "${harness.myDeviceId}",
+                      "issuedByUserId": "${harness.partnerUserId}",
+                      "commandType": "START_ARREST",
+                      "payload": {
+                        "sessionId": "$cloudSessionId",
+                        "authorizationId": "$authId",
+                        "sessionType": "PARTNER_ARREST",
+                        "durationMinutes": 60,
+                        "goal": "Focus",
+                        "ruleMode": "BLOCK_SELECTED",
+                        "allowedCategories": ["CALLS"]
+                      },
+                      "status": "PENDING",
+                      "expiresAt": "2026-11-05T08:30:00.000Z"
+                    }
+                  ],
+                  "nextSequenceCursor": 7
+                }
+                """.trimIndent()
+            )
+        )
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{ "session": { "sessionId": "$cloudSessionId", "status": "REJECTED" } }"""))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{ "command": { "commandId": "$commandId", "status": "REJECTED" } }"""))
+
+        val result = harness.coordinator.pollAndExecutePendingCommands()
+        assertTrue(result is CloudResult.Success)
+        assertNull(harness.fakeBridge.activeSession.value)
+        assertTrue(harness.fakeBridge.diagnosticEvents.any { it.contains("AUTHORIZATION_VALIDATION") && it.contains("does not match approved configuration") })
     }
 }

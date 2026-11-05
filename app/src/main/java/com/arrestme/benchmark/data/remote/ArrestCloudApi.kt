@@ -192,9 +192,15 @@ interface ArrestCloudApi {
     suspend fun listPartnerPermissions(
         @Query("role") role: String = "all",
         @Query("activeOnly") activeOnly: Boolean = true,
+        @Query("includeConsumed") includeConsumed: Boolean = false,
         @Query("limit") limit: Int = 50,
         @Query("offset") offset: Int = 0
     ): Response<PaginatedPartnerPermissionsDto>
+
+    @GET("api/v1/partner-permissions/{id}")
+    suspend fun getPartnerPermission(
+        @Path("id") permissionId: String
+    ): Response<PartnerPermissionEnvelopeDto>
 
     @DELETE("api/v1/partner-permissions/{id}")
     suspend fun revokePartnerPermission(@Path("id") permissionId: String): Response<PartnerPermissionEnvelopeDto>

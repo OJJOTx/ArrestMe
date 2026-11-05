@@ -82,6 +82,12 @@ interface LocalSessionEngineBridge {
     suspend fun applyTemporaryAppAccessOverride(grantId: String, packageName: String, expiresAtWallMs: Long)
     suspend fun revokeTemporaryAppAccessOverride(grantId: String)
     suspend fun extendActiveSession(extensionMs: Long)
+    suspend fun recordDiagnosticEvent(
+        eventType: String,
+        details: String,
+        severity: String = "INFO",
+        sessionId: String? = null
+    )
 }
 
 class DefaultLocalSessionEngineBridge(
@@ -119,6 +125,25 @@ class DefaultLocalSessionEngineBridge(
         sessionController.revokeTemporaryAppAccessOverride(grantId)
     override suspend fun extendActiveSession(extensionMs: Long) =
         sessionController.extendActiveSession(extensionMs)
+    override suspend fun recordDiagnosticEvent(
+        eventType: String,
+        details: String,
+        severity: String,
+        sessionId: String?
+    ) {
+        runCatching {
+            arrestRepository.insertDiagnosticEvent(
+                com.arrestme.benchmark.data.local.DiagnosticEventEntity(
+                    timestampMs = System.currentTimeMillis(),
+                    eventType = eventType,
+                    packageName = "com.arrestme.benchmark",
+                    sessionId = sessionId,
+                    details = details,
+                    severity = severity
+                )
+            )
+        }
+    }
 }
 
 /**
@@ -307,12 +332,17 @@ class CloudCommandCoordinator(
                     )
                 }
 
-                // Refresh active granted permissions cache so step 5 (authorization matching) is up to date
+                // Refresh active granted permissions cache so step 5 (authorization matching) is up to date.
+                // Do not clear the cache unconditionally so active/pending session authorizations are preserved.
                 runCatching {
-                    val permsRes = api.listPartnerPermissions(role = "granted", activeOnly = true, limit = 100)
+                    val permsRes = api.listPartnerPermissions(
+                        role = "granted",
+                        activeOnly = true,
+                        includeConsumed = true,
+                        limit = 100
+                    )
                     if (permsRes.isSuccessful) {
                         val items = permsRes.body()?.items ?: emptyList()
-                        cachedGrantedPermissions.clear()
                         items.forEach { cachedGrantedPermissions[it.permissionId] = it }
                     }
                 }
@@ -330,6 +360,11 @@ class CloudCommandCoordinator(
                     is CloudResult.Failure -> pollRes
                     is CloudResult.Success -> {
                         val commands = pollRes.data.items
+                        engineBridge.recordDiagnosticEvent(
+                            eventType = "COMMAND_POLLING",
+                            details = "Polled ${commands.size} commands from cloud",
+                            severity = "INFO"
+                        )
                         for (cmd in commands) {
                             processSingleCommandLocked(api, myUserId, myDeviceId, cmd)
                             if (cmd.sequenceNo > 0L) {
@@ -428,26 +463,57 @@ class CloudCommandCoordinator(
         // Check if already mapped and running locally (idempotent replay)
         val existingLocalId = engineBridge.getLocalSessionIdForCloudSession(cloudSessionId)
         val currentActive = engineBridge.activeSession.value
-        if (existingLocalId != null && currentActive?.sessionId == existingLocalId && currentActive.state.isInProgress) {
-            runCatching {
-                api.acknowledgeSession(
-                    sessionId = cloudSessionId,
-                    body = AcknowledgeSessionRequestDto(
-                        deviceId = myDeviceId,
-                        outcome = "STARTED",
-                        localSessionId = existingLocalId,
-                        localEngineState = currentActive.state.name
+        if (existingLocalId != null) {
+            if (currentActive?.sessionId == existingLocalId && currentActive.state.isInProgress) {
+                runCatching {
+                    api.acknowledgeSession(
+                        sessionId = cloudSessionId,
+                        body = AcknowledgeSessionRequestDto(
+                            deviceId = myDeviceId,
+                            outcome = "STARTED",
+                            localSessionId = existingLocalId,
+                            localEngineState = currentActive.state.name
+                        )
                     )
-                )
-                api.acknowledgeCommand(
-                    commandId = command.commandId,
-                    body = AcknowledgeCommandRequestDto(
-                        deviceId = myDeviceId,
-                        status = "EXECUTED"
+                    api.acknowledgeCommand(
+                        commandId = command.commandId,
+                        body = AcknowledgeCommandRequestDto(
+                            deviceId = myDeviceId,
+                            status = "EXECUTED"
+                        )
                     )
+                }
+                return
+            } else {
+                val replayReason = "Session $cloudSessionId has already been executed on this device and cannot be replayed"
+                engineBridge.recordDiagnosticEvent(
+                    eventType = "COMMAND_REPLAY_REJECTED",
+                    details = replayReason,
+                    severity = "WARN",
+                    sessionId = cloudSessionId
                 )
+                runCatching {
+                    api.acknowledgeSession(
+                        sessionId = cloudSessionId,
+                        body = AcknowledgeSessionRequestDto(
+                            deviceId = myDeviceId,
+                            outcome = "REJECTED",
+                            localSessionId = existingLocalId,
+                            localEngineState = currentActive?.state?.name ?: "IDLE",
+                            reason = replayReason
+                        )
+                    )
+                    api.acknowledgeCommand(
+                        commandId = command.commandId,
+                        body = AcknowledgeCommandRequestDto(
+                            deviceId = myDeviceId,
+                            status = "REJECTED",
+                            failureReason = replayReason
+                        )
+                    )
+                }
+                return
             }
-            return
         }
 
         val sessionTypeStr = payload["sessionType"]?.jsonPrimitive?.contentOrNull() ?: "PARTNER_ARREST"
@@ -466,6 +532,20 @@ class CloudCommandCoordinator(
         val initiatedByUserId = payload["initiatedByUserId"]?.jsonPrimitive?.contentOrNull()
             ?: command.issuedByUserId
 
+        var matchingPerm = authorizationId?.let { cachedGrantedPermissions[it] }
+        if (matchingPerm == null && !authorizationId.isNullOrBlank()) {
+            runCatching {
+                val fetchRes = api.getPartnerPermission(authorizationId)
+                if (fetchRes.isSuccessful) {
+                    val p = fetchRes.body()?.permission
+                    if (p != null) {
+                        cachedGrantedPermissions[p.permissionId] = p
+                        matchingPerm = p
+                    }
+                }
+            }
+        }
+
         val allowedCategories = parseStringList(payload["allowedCategories"])
             .mapNotNull { token -> runCatching { AllowedCategory.valueOf(token) }.getOrNull() }
             .toSet()
@@ -481,10 +561,25 @@ class CloudCommandCoordinator(
                 myDeviceId = myDeviceId,
                 authorizationId = authorizationId,
                 initiatedByUserId = initiatedByUserId,
+                cloudSessionId = cloudSessionId,
+                commandPayload = payload,
                 durationMinutes = durationMinutes,
+                ruleMode = ruleMode,
+                allowedCategories = allowedCategories,
+                blockedPackages = blockedPackages,
+                allowedStudyPackages = allowedStudyPackages,
+                overlayStatusBar = overlayStatusBar,
+                disableEmergencyExit = disableEmergencyExit,
+                matchingPerm = matchingPerm,
                 nowMs = nowMs
             )
             if (validationError != null) {
+                engineBridge.recordDiagnosticEvent(
+                    eventType = "AUTHORIZATION_VALIDATION",
+                    details = "Validation failed for command ${command.commandId} (session $cloudSessionId, auth $authorizationId): $validationError",
+                    severity = "WARN",
+                    sessionId = cloudSessionId
+                )
                 runCatching {
                     api.acknowledgeSession(
                         sessionId = cloudSessionId,
@@ -506,6 +601,12 @@ class CloudCommandCoordinator(
                 }
                 return
             }
+            engineBridge.recordDiagnosticEvent(
+                eventType = "AUTHORIZATION_VALIDATION",
+                details = "Validation succeeded for command ${command.commandId} (session $cloudSessionId, auth $authorizationId)",
+                severity = "INFO",
+                sessionId = cloudSessionId
+            )
         }
 
         // Notify backend that target device accepted command and is preparing engine (phase -> EXECUTING)
@@ -528,7 +629,6 @@ class CloudCommandCoordinator(
             )
         }
 
-        val matchingPerm = authorizationId?.let { cachedGrantedPermissions[it] }
         // Step 6: Map remote configuration into existing SessionConfig
         val sessionConfig = SessionConfig(
             sessionType = sessionType,
@@ -553,6 +653,12 @@ class CloudCommandCoordinator(
                     localSessionId = localSessionId
                 )
                 pendingCloudSessionSyncIds.add(cloudSessionId)
+                engineBridge.recordDiagnosticEvent(
+                    eventType = "LOCAL_SESSION_STARTUP",
+                    details = "Started local session $localSessionId for cloud session $cloudSessionId",
+                    severity = "INFO",
+                    sessionId = cloudSessionId
+                )
 
                 // Step 9: Acknowledge the actual STARTED / EXECUTED result
                 runCatching {
@@ -572,6 +678,20 @@ class CloudCommandCoordinator(
                             status = "EXECUTED"
                         )
                     )
+                }.onSuccess {
+                    engineBridge.recordDiagnosticEvent(
+                        eventType = "COMMAND_ACKNOWLEDGMENT",
+                        details = "Acknowledged START_ARREST (command ${command.commandId}, session $cloudSessionId) as EXECUTED / STARTED",
+                        severity = "INFO",
+                        sessionId = cloudSessionId
+                    )
+                }.onFailure { err ->
+                    engineBridge.recordDiagnosticEvent(
+                        eventType = "COMMAND_ACKNOWLEDGMENT",
+                        details = "Failed acknowledging START_ARREST (command ${command.commandId}): ${err.message}",
+                        severity = "ERROR",
+                        sessionId = cloudSessionId
+                    )
                 }
                 _coordinatorBanner.value = "Remote ${sessionType.label} active: $goal (${durationMinutes}m)"
             }
@@ -580,6 +700,12 @@ class CloudCommandCoordinator(
                     engineBridge.restoreBackedUpLocalRulesIfPresent()
                 }
                 val reason = "Target device already has an active session (${startRes.existingSessionId})"
+                engineBridge.recordDiagnosticEvent(
+                    eventType = "LOCAL_SESSION_STARTUP",
+                    details = "Duplicate session prevented: $reason",
+                    severity = "WARN",
+                    sessionId = cloudSessionId
+                )
                 runCatching {
                     api.acknowledgeSession(
                         sessionId = cloudSessionId,
@@ -605,6 +731,12 @@ class CloudCommandCoordinator(
                 if (sessionType != SessionType.SELF_ARREST) {
                     engineBridge.restoreBackedUpLocalRulesIfPresent()
                 }
+                engineBridge.recordDiagnosticEvent(
+                    eventType = "LOCAL_SESSION_STARTUP",
+                    details = "Engine startup error: ${startRes.message}",
+                    severity = "ERROR",
+                    sessionId = cloudSessionId
+                )
                 runCatching {
                     api.acknowledgeSession(
                         sessionId = cloudSessionId,
@@ -633,13 +765,22 @@ class CloudCommandCoordinator(
         myDeviceId: String,
         authorizationId: String?,
         initiatedByUserId: String,
+        cloudSessionId: String,
+        commandPayload: JsonObject,
         durationMinutes: Int,
+        ruleMode: BlockingRuleMode,
+        allowedCategories: Set<AllowedCategory>,
+        blockedPackages: List<String>?,
+        allowedStudyPackages: List<String>?,
+        overlayStatusBar: Boolean,
+        disableEmergencyExit: Boolean,
+        matchingPerm: PartnerPermissionDto?,
         nowMs: Long
     ): String? {
         if (authorizationId.isNullOrBlank()) {
             return "Missing authorizationId on remote partner command"
         }
-        val perm = cachedGrantedPermissions[authorizationId]
+        val perm = matchingPerm ?: cachedGrantedPermissions[authorizationId]
             ?: return "Authorization $authorizationId is not active or was revoked by device owner"
 
         if (perm.owner.id != myUserId) {
@@ -651,16 +792,100 @@ class CloudCommandCoordinator(
         if (perm.partner.id != initiatedByUserId) {
             return "Command initiator does not match authorized partner"
         }
-        if (perm.revokedAt != null || !perm.isCurrentlyActive) {
+        if (perm.revokedAt != null) {
             return "Authorization was revoked"
         }
         val expiresMs = parseIsoUtcMs(perm.expiresAt)
         if (expiresMs == null || nowMs >= expiresMs) {
             return "Authorization has expired"
         }
-        if (durationMinutes > perm.maximumSessionDuration) {
-            return "Requested duration ($durationMinutes min) exceeds authorized maximum (${perm.maximumSessionDuration} min)"
+        val validFromMs = parseIsoUtcMs(perm.validFrom)
+        if (validFromMs != null && nowMs < validFromMs) {
+            return "Authorization is not yet active"
         }
+
+        // Differentiate one-time authorization vs standing authorization
+        if (perm.oneTimeOnly) {
+            if (perm.usedCount > 1) {
+                return "One-time authorization has been consumed multiple times"
+            }
+            if (perm.usedCount == 1) {
+                // Must be bound to this exact cloud session
+                if (!perm.boundSessionId.isNullOrBlank() && perm.boundSessionId != cloudSessionId) {
+                    return "One-time authorization has already been consumed for another session (${perm.boundSessionId})"
+                }
+            }
+            val proposalId = commandPayload["proposalId"]?.jsonPrimitive?.contentOrNull()
+            if (!perm.proposalId.isNullOrBlank() && !proposalId.isNullOrBlank() && perm.proposalId != proposalId) {
+                return "Command proposal ID mismatch with authorization"
+            }
+            val cmdApprovedRev = commandPayload["approvedRevision"]?.jsonPrimitive?.intOrNull()
+            if (perm.approvedRevision != null && cmdApprovedRev != null && perm.approvedRevision != cmdApprovedRev) {
+                return "Command proposal revision mismatch with authorization"
+            }
+        } else {
+            // Standing authorizations must be currently active (not exhausted/expired)
+            if (!perm.isCurrentlyActive) {
+                return "Standing authorization is not currently active"
+            }
+        }
+
+        // Validate exact blocking configuration if present, otherwise check standing limits
+        val exact = perm.exactBlockingConfiguration
+        if (exact != null) {
+            if (durationMinutes != exact.durationMinutes) {
+                return "Requested duration ($durationMinutes min) does not match approved configuration (${exact.durationMinutes} min)"
+            }
+            if (ruleMode.name != exact.blockingConfiguration.ruleMode) {
+                return "Rule mode (${ruleMode.name}) does not match approved configuration (${exact.blockingConfiguration.ruleMode})"
+            }
+            if (overlayStatusBar != exact.blockingConfiguration.overlayStatusBar) {
+                return "overlayStatusBar does not match approved configuration"
+            }
+            if (disableEmergencyExit != exact.blockingConfiguration.disableEmergencyExit) {
+                return "disableEmergencyExit does not match approved configuration"
+            }
+            val approvedCats = exact.blockingConfiguration.allowedCategories.toSet()
+            val reqCats = allowedCategories.map { it.name }.toSet()
+            if (reqCats != approvedCats) {
+                return "Allowed categories do not match approved configuration"
+            }
+            if (exact.blockingConfiguration.blockedPackages != null) {
+                val approvedBlocked = exact.blockingConfiguration.blockedPackages.toSet()
+                val reqBlocked = blockedPackages?.toSet() ?: emptySet()
+                if (reqBlocked != approvedBlocked) {
+                    return "Blocked packages do not match approved configuration"
+                }
+            }
+            if (exact.blockingConfiguration.allowedStudyPackages != null) {
+                val approvedStudy = exact.blockingConfiguration.allowedStudyPackages.toSet()
+                val reqStudy = allowedStudyPackages?.toSet() ?: emptySet()
+                if (reqStudy != approvedStudy) {
+                    return "Allowed study packages do not match approved configuration"
+                }
+            }
+        } else {
+            if (durationMinutes > perm.maximumSessionDuration) {
+                return "Requested duration ($durationMinutes min) exceeds authorized maximum (${perm.maximumSessionDuration} min)"
+            }
+            val limits = perm.blockingConfigLimits
+            if (!limits.allowedRuleModes.contains(ruleMode.name)) {
+                return "Rule mode ${ruleMode.name} not permitted by authorization limits"
+            }
+            if (disableEmergencyExit && !limits.allowDisableEmergencyExit) {
+                return "Disabling emergency exit is not permitted by authorization limits"
+            }
+            if (overlayStatusBar && !limits.allowOverlayStatusBar) {
+                return "Overlay status bar is not permitted by authorization limits"
+            }
+            val reqCats = allowedCategories.map { it.name }.toSet()
+            for (req in limits.requiredAllowedCategories) {
+                if (!reqCats.contains(req)) {
+                    return "Missing required category $req in requested configuration"
+                }
+            }
+        }
+
         return null
     }
 
