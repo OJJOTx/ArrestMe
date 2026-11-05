@@ -2,15 +2,24 @@ package com.arrestme.benchmark.data.remote
 
 import com.arrestme.benchmark.data.remote.dto.AcceptProposalRequestDto
 import com.arrestme.benchmark.data.remote.dto.AcceptProposalResponseDto
+import com.arrestme.benchmark.data.remote.dto.AcknowledgeCommandRequestDto
+import com.arrestme.benchmark.data.remote.dto.AcknowledgeCommandResponseDto
+import com.arrestme.benchmark.data.remote.dto.AcknowledgeSessionRequestDto
+import com.arrestme.benchmark.data.remote.dto.ActiveSessionsResponseDto
 import com.arrestme.benchmark.data.remote.dto.ApprovalPoliciesResponseDto
+import com.arrestme.benchmark.data.remote.dto.ArrestSessionEnvelopeDto
 import com.arrestme.benchmark.data.remote.dto.AuthSessionResponseDto
 import com.arrestme.benchmark.data.remote.dto.CounterofferProposalRequestDto
 import com.arrestme.benchmark.data.remote.dto.CreatePartnerPermissionRequestDto
 import com.arrestme.benchmark.data.remote.dto.CreateProposalRequestDto
+import com.arrestme.benchmark.data.remote.dto.CreateRemoteSessionRequestDto
+import com.arrestme.benchmark.data.remote.dto.CreateRemoteSessionResponseDto
 import com.arrestme.benchmark.data.remote.dto.CurrentUserResponseDto
+import com.arrestme.benchmark.data.remote.dto.DeviceAppCatalogEnvelopeDto
 import com.arrestme.benchmark.data.remote.dto.DeviceEnvelopeDto
 import com.arrestme.benchmark.data.remote.dto.HealthResponseDto
 import com.arrestme.benchmark.data.remote.dto.InviteCodeResponseDto
+import com.arrestme.benchmark.data.remote.dto.LiveSessionDashboardResponseDto
 import com.arrestme.benchmark.data.remote.dto.LoginRequestDto
 import com.arrestme.benchmark.data.remote.dto.LogoutRequestDto
 import com.arrestme.benchmark.data.remote.dto.LogoutResponseDto
@@ -19,21 +28,29 @@ import com.arrestme.benchmark.data.remote.dto.PaginatedPartnerPermissionsDto
 import com.arrestme.benchmark.data.remote.dto.PaginatedPartnershipsDto
 import com.arrestme.benchmark.data.remote.dto.PaginatedProposalsDto
 import com.arrestme.benchmark.data.remote.dto.PaginatedScheduledArrestsDto
+import com.arrestme.benchmark.data.remote.dto.PaginatedSessionsResponseDto
 import com.arrestme.benchmark.data.remote.dto.PartnerDiscoveryResponseDto
 import com.arrestme.benchmark.data.remote.dto.PartnerPermissionEnvelopeDto
 import com.arrestme.benchmark.data.remote.dto.PartnerProfileEnvelopeDto
 import com.arrestme.benchmark.data.remote.dto.PartnershipEnvelopeDto
+import com.arrestme.benchmark.data.remote.dto.PollDeviceCommandsResponseDto
+import com.arrestme.benchmark.data.remote.dto.PostSessionEventsRequestDto
+import com.arrestme.benchmark.data.remote.dto.PostSessionEventsResponseDto
 import com.arrestme.benchmark.data.remote.dto.ProposalEnvelopeDto
 import com.arrestme.benchmark.data.remote.dto.RefreshRequestDto
 import com.arrestme.benchmark.data.remote.dto.RefreshTokensResponseDto
 import com.arrestme.benchmark.data.remote.dto.RegisterDeviceRequestDto
 import com.arrestme.benchmark.data.remote.dto.RegisterRequestDto
 import com.arrestme.benchmark.data.remote.dto.RejectOrCancelProposalRequestDto
+import com.arrestme.benchmark.data.remote.dto.RemoteSessionCommandRequestDto
+import com.arrestme.benchmark.data.remote.dto.RemoteSessionCommandResponseDto
 import com.arrestme.benchmark.data.remote.dto.ScheduledArrestEnvelopeDto
 import com.arrestme.benchmark.data.remote.dto.SendPartnerRequestDto
+import com.arrestme.benchmark.data.remote.dto.TriggerScheduledArrestResponseDto
 import com.arrestme.benchmark.data.remote.dto.UpdateApprovalPolicyRequestDto
 import com.arrestme.benchmark.data.remote.dto.UpdateDeviceRequestDto
 import com.arrestme.benchmark.data.remote.dto.UpdateProfileRequestDto
+import com.arrestme.benchmark.data.remote.dto.UpsertDeviceAppCatalogRequestDto
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -234,4 +251,83 @@ interface ArrestCloudApi {
 
     @POST("api/v1/scheduled-arrests/{id}/cancel")
     suspend fun cancelScheduledArrest(@Path("id") scheduleId: String): Response<ScheduledArrestEnvelopeDto>
+
+    @POST("api/v1/scheduled-arrests/{id}/trigger")
+    suspend fun triggerScheduledArrest(@Path("id") scheduleId: String): Response<TriggerScheduledArrestResponseDto>
+
+    // ========================================================================
+    // V0.5 — Selectable App Catalog, Command Queue & Remote Session Coordination
+    // ========================================================================
+
+    @PUT("api/v1/devices/{id}/app-catalog")
+    suspend fun upsertDeviceAppCatalog(
+        @Path("id") deviceId: String,
+        @Body body: UpsertDeviceAppCatalogRequestDto
+    ): Response<DeviceAppCatalogEnvelopeDto>
+
+    @GET("api/v1/devices/{id}/app-catalog")
+    suspend fun getDeviceAppCatalog(
+        @Path("id") deviceId: String
+    ): Response<DeviceAppCatalogEnvelopeDto>
+
+    @GET("api/v1/devices/{id}/commands")
+    suspend fun pollDeviceCommands(
+        @Path("id") deviceId: String,
+        @Query("afterSequence") afterSequence: Long = 0L,
+        @Query("includeDelivered") includeDelivered: Boolean = true,
+        @Query("limit") limit: Int = 25
+    ): Response<PollDeviceCommandsResponseDto>
+
+    @POST("api/v1/commands/{id}/acknowledge")
+    suspend fun acknowledgeCommand(
+        @Path("id") commandId: String,
+        @Body body: AcknowledgeCommandRequestDto
+    ): Response<AcknowledgeCommandResponseDto>
+
+    @POST("api/v1/sessions")
+    suspend fun createRemoteSession(
+        @Body body: CreateRemoteSessionRequestDto
+    ): Response<CreateRemoteSessionResponseDto>
+
+    @GET("api/v1/sessions")
+    suspend fun listSessions(
+        @Query("role") role: String = "all",
+        @Query("status") status: String? = null,
+        @Query("deviceId") deviceId: String? = null,
+        @Query("limit") limit: Int = 20,
+        @Query("offset") offset: Int = 0
+    ): Response<PaginatedSessionsResponseDto>
+
+    @GET("api/v1/sessions/active")
+    suspend fun listActiveSessions(): Response<ActiveSessionsResponseDto>
+
+    @GET("api/v1/sessions/live-dashboard")
+    suspend fun getLiveDashboardSessions(): Response<LiveSessionDashboardResponseDto>
+
+    @GET("api/v1/sessions/{id}")
+    suspend fun getSession(@Path("id") sessionId: String): Response<ArrestSessionEnvelopeDto>
+
+    @POST("api/v1/sessions/{id}/acknowledge")
+    suspend fun acknowledgeSession(
+        @Path("id") sessionId: String,
+        @Body body: AcknowledgeSessionRequestDto
+    ): Response<ArrestSessionEnvelopeDto>
+
+    @POST("api/v1/sessions/{id}/events")
+    suspend fun postSessionEvents(
+        @Path("id") sessionId: String,
+        @Body body: PostSessionEventsRequestDto
+    ): Response<PostSessionEventsResponseDto>
+
+    @POST("api/v1/sessions/{id}/end")
+    suspend fun endRemoteSession(
+        @Path("id") sessionId: String,
+        @Body body: RemoteSessionCommandRequestDto = RemoteSessionCommandRequestDto()
+    ): Response<RemoteSessionCommandResponseDto>
+
+    @POST("api/v1/sessions/{id}/sync")
+    suspend fun syncRemoteSession(
+        @Path("id") sessionId: String,
+        @Body body: RemoteSessionCommandRequestDto = RemoteSessionCommandRequestDto()
+    ): Response<RemoteSessionCommandResponseDto>
 }

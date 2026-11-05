@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
@@ -82,6 +83,7 @@ fun PartnersScreen(
     onOpenPartnerDetails: (partnershipId: String) -> Unit,
     onOpenNegotiationDetails: (proposalId: String) -> Unit,
     onOpenScheduledArrests: () -> Unit,
+    onOpenLiveDashboard: () -> Unit,
     onOpenAccountSettings: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -233,16 +235,16 @@ fun PartnersScreen(
         // Quick Navigation & Pending Counts Row
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             val totalFriendReq = pendingCounts.incomingFriendRequestsCount + pendingCounts.outgoingFriendRequestsCount
             OutlinedButton(
                 onClick = onOpenPartnerRequests,
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Invitations ($totalFriendReq)")
+                Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Invites ($totalFriendReq)", fontSize = 11.sp)
             }
 
             val activeScheduleCount = scheduledArrests.count { it.status == "SCHEDULED" || it.status == "ACTIVE" }
@@ -250,9 +252,18 @@ fun PartnersScreen(
                 onClick = onOpenScheduledArrests,
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Schedules ($activeScheduleCount)")
+                Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Schedules ($activeScheduleCount)", fontSize = 11.sp)
+            }
+
+            Button(
+                onClick = onOpenLiveDashboard,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Live", fontSize = 11.sp)
             }
         }
 

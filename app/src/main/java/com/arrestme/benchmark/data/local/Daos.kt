@@ -50,6 +50,9 @@ interface AppRuleDao {
 
     @Query("SELECT * FROM app_rules")
     suspend fun getAllRulesSnapshot(): List<AppRuleEntity>
+
+    @Query("DELETE FROM app_rules")
+    suspend fun clearAllRules()
 }
 
 @Dao

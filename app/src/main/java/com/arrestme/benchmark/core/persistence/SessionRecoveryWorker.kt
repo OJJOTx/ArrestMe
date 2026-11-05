@@ -21,6 +21,7 @@ class SessionRecoveryWorker(
             exitDetails = "WorkManager scheduled session reconciliation"
         )
         app.sessionController.checkAndCompleteIfExpired()
+        app.cloudCommandCoordinator.evaluateDueSchedules()
         return Result.success()
     }
 

@@ -18,6 +18,7 @@ enum class BenchmarkRoute(val route: String, val label: String) {
 object PartnerSubRoutes {
     const val PARTNER_REQUESTS = "partner_requests"
     const val SCHEDULED_ARRESTS = "scheduled_arrests"
+    const val LIVE_DASHBOARD = "live_dashboard"
     const val PARTNER_DETAILS = "partner_details/{partnershipId}"
     const val PARTNER_APPROVAL_SETTINGS = "partner_approval_settings/{partnershipId}"
     const val PROPOSAL_BUILDER = "proposal_builder/{partnershipId}"

@@ -85,6 +85,94 @@ class ArrestRepository(
         snapshotStore.cacheBlockedAndAllowedPackages(blocked = blocked, allowed = allowed)
     }
 
+    /**
+     * Backs up the device owner's local Self-Arrest app rules (if not already backed up)
+     * and applies the remote Partner Arrest session's blocked/allowed package lists.
+     */
+    suspend fun applyTemporaryPartnerRulesWithBackup(
+        blockedPackages: List<String>?,
+        allowedStudyPackages: List<String>?
+    ) {
+        if (blockedPackages == null && allowedStudyPackages == null) {
+            syncRulesCache()
+            return
+        }
+        val currentRules = appRuleDao.getAllRulesSnapshot()
+        val backupArr = JSONArray()
+        for (rule in currentRules) {
+            backupArr.put(
+                JSONObject().apply {
+                    put("packageName", rule.packageName)
+                    put("appLabel", rule.appLabel)
+                    put("ruleType", rule.ruleType)
+                    put("updatedAtMs", rule.updatedAtMs)
+                }
+            )
+        }
+        snapshotStore.saveLocalRulesBackupIfNone(backupArr.toString())
+
+        val labelByPkg = currentRules.associate { it.packageName to it.appLabel }
+        appRuleDao.clearAllRules()
+        val now = System.currentTimeMillis()
+        blockedPackages?.distinct()?.forEach { pkg ->
+            val trimmed = pkg.trim()
+            if (trimmed.isNotEmpty()) {
+                appRuleDao.upsertRule(
+                    AppRuleEntity(
+                        packageName = trimmed,
+                        appLabel = labelByPkg[trimmed] ?: trimmed,
+                        ruleType = AppRuleType.BLOCKED.name,
+                        updatedAtMs = now
+                    )
+                )
+            }
+        }
+        allowedStudyPackages?.distinct()?.forEach { pkg ->
+            val trimmed = pkg.trim()
+            if (trimmed.isNotEmpty()) {
+                appRuleDao.upsertRule(
+                    AppRuleEntity(
+                        packageName = trimmed,
+                        appLabel = labelByPkg[trimmed] ?: trimmed,
+                        ruleType = AppRuleType.ALLOWED_STUDY.name,
+                        updatedAtMs = now
+                    )
+                )
+            }
+        }
+        syncRulesCache()
+    }
+
+    /**
+     * Restores the device owner's local Self-Arrest app rules after a Partner Arrest session finishes.
+     */
+    suspend fun restoreBackedUpLocalRulesIfPresent() {
+        val backupJson = snapshotStore.readLocalRulesBackupJson() ?: return
+        runCatching {
+            val arr = JSONArray(backupJson)
+            appRuleDao.clearAllRules()
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val pkg = obj.optString("packageName", "").trim()
+                val label = obj.optString("appLabel", pkg).ifBlank { pkg }
+                val ruleType = obj.optString("ruleType", AppRuleType.BLOCKED.name)
+                val updatedAtMs = obj.optLong("updatedAtMs", System.currentTimeMillis())
+                if (pkg.isNotEmpty()) {
+                    appRuleDao.upsertRule(
+                        AppRuleEntity(
+                            packageName = pkg,
+                            appLabel = label,
+                            ruleType = ruleType,
+                            updatedAtMs = updatedAtMs
+                        )
+                    )
+                }
+            }
+        }
+        snapshotStore.clearLocalRulesBackup()
+        syncRulesCache()
+    }
+
     suspend fun insertDiagnosticEvent(event: DiagnosticEventEntity) {
         diagnosticEventDao.insertEvent(event)
     }

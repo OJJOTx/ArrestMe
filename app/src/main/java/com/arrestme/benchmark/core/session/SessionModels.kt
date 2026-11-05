@@ -1,8 +1,9 @@
 package com.arrestme.benchmark.core.session
 
 enum class SessionType(val label: String) {
-    SELF_ARREST("Self Arrest")
-    // Designed for future extension (e.g. PARTNER_ARREST) without changing controller contracts.
+    SELF_ARREST("Self Arrest"),
+    PARTNER_ARREST("Partner Arrest"),
+    MUTUAL_ARREST("Mutual Arrest")
 }
 
 enum class SessionState {
@@ -51,7 +52,11 @@ data class SessionConfig(
     ),
     val ruleMode: BlockingRuleMode = BlockingRuleMode.BLOCK_SELECTED,
     val overlayStatusBar: Boolean = false,
-    val disableEmergencyExit: Boolean = false
+    val disableEmergencyExit: Boolean = false,
+    val cloudSessionId: String? = null,
+    val authorizationId: String? = null,
+    val controllingPartnerUserId: String? = null,
+    val controllingPartnerUsername: String? = null
 ) {
     val durationMs: Long
         get() = durationMinutes.coerceAtLeast(1) * 60_000L
@@ -73,7 +78,11 @@ data class ActiveSessionSnapshot(
     val accumulatedPausedMs: Long,
     val startElapsedRealtimeMs: Long,
     val bootCountAtStart: Int,
-    val lastUpdatedWallMs: Long
+    val lastUpdatedWallMs: Long,
+    val cloudSessionId: String? = null,
+    val authorizationId: String? = null,
+    val controllingPartnerUserId: String? = null,
+    val controllingPartnerUsername: String? = null
 ) {
     fun computeRemainingMs(nowWallMs: Long = System.currentTimeMillis()): Long {
         return when (state) {

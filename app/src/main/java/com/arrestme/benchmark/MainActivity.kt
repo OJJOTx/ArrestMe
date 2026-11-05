@@ -52,6 +52,7 @@ import com.arrestme.benchmark.ui.home.HomeScreen
 import com.arrestme.benchmark.ui.navigation.BenchmarkRoute
 import com.arrestme.benchmark.ui.navigation.PartnerSubRoutes
 import com.arrestme.benchmark.ui.partners.ArrestProposalBuilderScreen
+import com.arrestme.benchmark.ui.partners.LiveSessionDashboardScreen
 import com.arrestme.benchmark.ui.partners.NegotiationDetailsScreen
 import com.arrestme.benchmark.ui.partners.PartnerApprovalSettingsScreen
 import com.arrestme.benchmark.ui.partners.PartnerDetailsScreen
@@ -123,6 +124,17 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
     val scheduledArrests by vm.scheduledArrests.collectAsStateWithLifecycle()
     val isPartnerLoading by vm.isPartnerSystemLoading.collectAsStateWithLifecycle()
     val partnerErrorMessage by vm.partnerErrorMessage.collectAsStateWithLifecycle()
+
+    // V0.5 Live Dashboard & Coordinator state
+    val liveDashboardItems by vm.liveDashboardItems.collectAsStateWithLifecycle()
+    val isSyncingCommands by vm.isSyncingCommands.collectAsStateWithLifecycle()
+    val coordinatorBanner by vm.coordinatorBanner.collectAsStateWithLifecycle()
+
+    LaunchedEffect(coordinatorBanner) {
+        val msg = coordinatorBanner ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(msg)
+        vm.dismissCoordinatorBanner()
+    }
 
     LaunchedEffect(statusBanner) {
         val msg = statusBanner ?: return@LaunchedEffect
@@ -245,6 +257,9 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
                         onOpenScheduledArrests = {
                             navController.navigate(PartnerSubRoutes.SCHEDULED_ARRESTS)
                         },
+                        onOpenLiveDashboard = {
+                            navController.navigate(PartnerSubRoutes.LIVE_DASHBOARD)
+                        },
                         onOpenAccountSettings = {
                             navigateTo(BenchmarkRoute.ACCOUNT)
                         }
@@ -363,6 +378,21 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
                         errorMessage = partnerErrorMessage,
                         onCancelSchedule = vm::cancelScheduledArrest,
                         onRefresh = vm::refreshPartnerSystem,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(PartnerSubRoutes.LIVE_DASHBOARD) {
+                    val currentUserId = (backendAuthState as? BackendAuthState.Authenticated)?.credentials?.userId
+                    LiveSessionDashboardScreen(
+                        currentUserId = currentUserId,
+                        liveItems = liveDashboardItems,
+                        localActiveSession = activeSession,
+                        localRemainingMs = remainingMs,
+                        isSyncing = isSyncingCommands,
+                        onRefresh = vm::syncCommandsAndSchedules,
+                        onRequestRemoteEnd = { id -> vm.requestRemoteEndSession(id) },
+                        onRequestRemoteSync = { id -> vm.requestRemoteSyncSession(id) },
+                        onUploadAppCatalog = vm::uploadSelectableAppCatalog,
                         onBack = { navController.popBackStack() }
                     )
                 }

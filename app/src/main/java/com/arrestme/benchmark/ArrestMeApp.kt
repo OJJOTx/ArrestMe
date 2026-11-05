@@ -13,6 +13,7 @@ import com.arrestme.benchmark.core.backend.BackendAuthRepository
 import com.arrestme.benchmark.core.backend.BackendAuthState
 import com.arrestme.benchmark.core.backend.BackendConfigRepository
 import com.arrestme.benchmark.core.backend.BackendPreferencesDataSource
+import com.arrestme.benchmark.core.backend.CloudCommandCoordinator
 import com.arrestme.benchmark.core.backend.PartnerSystemRepository
 import com.arrestme.benchmark.core.backend.backendDataStore
 import com.arrestme.benchmark.core.blocking.BlockingEngine
@@ -91,6 +92,9 @@ class ArrestMeApp : Application() {
         private set
 
     lateinit var partnerSystemRepository: PartnerSystemRepository
+        private set
+
+    lateinit var cloudCommandCoordinator: CloudCommandCoordinator
         private set
 
     override fun onCreate() {
@@ -180,6 +184,18 @@ class ArrestMeApp : Application() {
             scope = appScope
         )
 
+        cloudCommandCoordinator = CloudCommandCoordinator(
+            preferencesDataSource = backendPreferencesDataSource,
+            configRepository = backendConfigRepository,
+            authRepository = backendAuthRepository,
+            apiClientFactory = apiClientFactory,
+            connectivityChecker = connectivityChecker,
+            arrestRepository = repository,
+            database = database,
+            sessionController = sessionController,
+            scope = appScope
+        )
+
         persistenceManager = PersistenceManager(
             context = this,
             repository = repository,
@@ -216,6 +232,7 @@ class ArrestMeApp : Application() {
                                 connectivityChecker.isOnline()
                             ) {
                                 backendAuthRepository.syncAccountAndDevice()
+                                cloudCommandCoordinator.syncCommandsSchedulesAndDashboard()
                             }
                         }
                     }

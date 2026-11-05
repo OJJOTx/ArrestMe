@@ -25,9 +25,12 @@ import com.arrestme.benchmark.data.local.AppRuleType
 import com.arrestme.benchmark.data.local.DiagnosticEventEntity
 import com.arrestme.benchmark.data.local.SessionEntity
 import com.arrestme.benchmark.data.local.SessionTransitionEntity
+import com.arrestme.benchmark.data.remote.dto.BlockingConfigurationDto
 import com.arrestme.benchmark.data.remote.dto.CounterofferProposalRequestDto
 import com.arrestme.benchmark.data.remote.dto.CreatePartnerPermissionRequestDto
 import com.arrestme.benchmark.data.remote.dto.CreateProposalRequestDto
+import com.arrestme.benchmark.data.remote.dto.DeviceAppCatalogDto
+import com.arrestme.benchmark.data.remote.dto.LiveSessionDashboardItemDto
 import com.arrestme.benchmark.data.remote.dto.PartnerDiscoveryResponseDto
 import com.arrestme.benchmark.data.remote.dto.PartnerProfileDto
 import com.arrestme.benchmark.data.remote.dto.PartnershipDto
@@ -117,6 +120,12 @@ class BenchmarkViewModel(application: Application) : AndroidViewModel(applicatio
     val scheduledArrests: StateFlow<List<ScheduledArrestDto>> = app.partnerSystemRepository.scheduledArrests
     val isPartnerSystemLoading: StateFlow<Boolean> = app.partnerSystemRepository.isLoading
     val partnerErrorMessage: StateFlow<String?> = app.partnerSystemRepository.errorMessage
+
+    // V0.5 Cloud Command & Remote Arrest Coordinator StateFlows
+    val liveDashboardItems: StateFlow<List<LiveSessionDashboardItemDto>> = app.cloudCommandCoordinator.liveDashboardItems
+    val partnerDeviceAppCatalog: StateFlow<DeviceAppCatalogDto?> = app.cloudCommandCoordinator.partnerDeviceAppCatalog
+    val isSyncingCommands: StateFlow<Boolean> = app.cloudCommandCoordinator.isSyncingCommands
+    val coordinatorBanner: StateFlow<String?> = app.cloudCommandCoordinator.coordinatorBanner
 
     init {
         refreshPermissions()
@@ -667,5 +676,105 @@ class BenchmarkViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
+    }
+
+    // ========================================================================
+    // V0.5 — Remote Arrest Execution, Commands, Catalog & Live Dashboard
+    // ========================================================================
+
+    fun syncCommandsAndSchedules() {
+        viewModelScope.launch {
+            when (val res = app.cloudCommandCoordinator.syncCommandsSchedulesAndDashboard()) {
+                is CloudResult.Success -> {
+                    _statusBanner.value = "Commands and live dashboard synchronized."
+                }
+                is CloudResult.Failure -> {
+                    _statusBanner.value = res.error.message
+                }
+            }
+        }
+    }
+
+    fun startRemotePartnerSession(
+        targetDeviceId: String,
+        authorizationId: String,
+        durationMinutes: Int,
+        goal: String,
+        blockingConfiguration: BlockingConfigurationDto,
+        sessionType: String = "PARTNER_ARREST",
+        onSuccess: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            when (
+                val res = app.cloudCommandCoordinator.startRemotePartnerSession(
+                    targetDeviceId = targetDeviceId,
+                    authorizationId = authorizationId,
+                    durationMinutes = durationMinutes,
+                    goal = goal,
+                    blockingConfiguration = blockingConfiguration,
+                    sessionType = sessionType
+                )
+            ) {
+                is CloudResult.Success -> {
+                    _statusBanner.value = "Remote session command queued for partner device."
+                    onSuccess()
+                }
+                is CloudResult.Failure -> {
+                    _statusBanner.value = res.error.message
+                }
+            }
+        }
+    }
+
+    fun requestRemoteEndSession(sessionId: String, reason: String? = null) {
+        viewModelScope.launch {
+            when (val res = app.cloudCommandCoordinator.requestRemoteEndSession(sessionId, reason)) {
+                is CloudResult.Success -> {
+                    _statusBanner.value = "Remote end command queued."
+                }
+                is CloudResult.Failure -> {
+                    _statusBanner.value = res.error.message
+                }
+            }
+        }
+    }
+
+    fun requestRemoteSyncSession(sessionId: String) {
+        viewModelScope.launch {
+            when (val res = app.cloudCommandCoordinator.requestRemoteSyncSession(sessionId)) {
+                is CloudResult.Success -> {
+                    _statusBanner.value = "Sync command queued for target device."
+                }
+                is CloudResult.Failure -> {
+                    _statusBanner.value = res.error.message
+                }
+            }
+        }
+    }
+
+    fun uploadSelectableAppCatalog() {
+        viewModelScope.launch {
+            if (_installedApps.value.isEmpty()) {
+                loadInstalledApps()
+            }
+            when (val res = app.cloudCommandCoordinator.uploadSelectableAppCatalog(_installedApps.value)) {
+                is CloudResult.Success -> {
+                    _statusBanner.value = "Selectable app catalog shared (${res.data.apps.size} apps, ${res.data.filteredOutSystemCount} system apps filtered out)."
+                }
+                is CloudResult.Failure -> {
+                    _statusBanner.value = res.error.message
+                }
+            }
+        }
+    }
+
+    fun loadPartnerDeviceAppCatalog(targetDeviceId: String) {
+        viewModelScope.launch {
+            app.cloudCommandCoordinator.loadPartnerDeviceAppCatalog(targetDeviceId)
+        }
+    }
+
+    fun dismissCoordinatorBanner() {
+        app.cloudCommandCoordinator.dismissBanner()
     }
 }

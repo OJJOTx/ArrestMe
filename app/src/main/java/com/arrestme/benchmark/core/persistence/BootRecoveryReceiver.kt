@@ -20,6 +20,7 @@ class BootRecoveryReceiver : BroadcastReceiver() {
         app.appScope.launch {
             try {
                 app.persistenceManager.handleSystemRecoveryBroadcast(action)
+                app.cloudCommandCoordinator.evaluateDueSchedules()
             } finally {
                 pendingResult.finish()
             }

@@ -512,6 +512,8 @@ data class ScheduledArrestDto(
     val occurrencesCompleted: Int = 0,
     val maxOccurrences: Int = 1,
     val nextOccurrenceAt: String? = null,
+    val lastMaterializedSessionId: String? = null,
+    val lastMaterializedAt: String? = null,
     val status: String,
     val createdAt: String = "",
     val updatedAt: String = ""
@@ -543,6 +545,7 @@ data class ArrestSessionDto(
     val blockingConfiguration: BlockingConfigurationDto = BlockingConfigurationDto(),
     val requestedDurationMinutes: Int = 45,
     val status: String = "REQUESTED",
+    val remoteExecutionPhase: String = "QUEUED",
     val localEngineState: String? = null,
     val requestedAt: String = "",
     val acceptedAt: String? = null,
@@ -580,4 +583,191 @@ data class PartnerProfileDto(
 @Serializable
 data class PartnerProfileEnvelopeDto(
     val profile: PartnerProfileDto
+)
+
+// ============================================================================
+// V0.5 — Remote Arrest Execution, Scheduling, App Catalog & Live Dashboard DTOs
+// ============================================================================
+
+@Serializable
+data class SessionCommandDto(
+    val commandId: String,
+    val sequenceNo: Long = 0L,
+    val sessionId: String? = null,
+    val targetDeviceId: String,
+    val issuedByUserId: String,
+    val commandType: String,
+    val payload: JsonObject = JsonObject(emptyMap()),
+    val status: String = "PENDING",
+    val resultMetadata: JsonObject? = null,
+    val failureReason: String? = null,
+    val pushDeliveryStatus: String = "NOT_ATTEMPTED",
+    val createdAt: String = "",
+    val expiresAt: String = "",
+    val deliveredAt: String? = null,
+    val acknowledgedAt: String? = null,
+    val executedAt: String? = null,
+    val updatedAt: String = ""
+)
+
+@Serializable
+data class PollDeviceCommandsResponseDto(
+    val items: List<SessionCommandDto> = emptyList(),
+    val nextSequenceCursor: Long = 0L
+)
+
+@Serializable
+data class AcknowledgeCommandRequestDto(
+    val deviceId: String,
+    val status: String,
+    val failureReason: String? = null,
+    val resultMetadata: JsonObject? = null
+)
+
+@Serializable
+data class AcknowledgeCommandResponseDto(
+    val command: SessionCommandDto,
+    val idempotentReplay: Boolean = false
+)
+
+@Serializable
+data class CreateRemoteSessionRequestDto(
+    val sessionType: String = "PARTNER_ARREST",
+    val targetDeviceId: String,
+    val authorizationId: String? = null,
+    val requestedDurationMinutes: Int,
+    val goal: String,
+    val blockingConfiguration: BlockingConfigurationDto = BlockingConfigurationDto(),
+    val commandTtlSeconds: Int? = null,
+    val idempotencyKey: String? = null
+)
+
+@Serializable
+data class CreateRemoteSessionResponseDto(
+    val session: ArrestSessionDto,
+    val command: SessionCommandDto? = null,
+    val idempotentReplay: Boolean = false
+)
+
+@Serializable
+data class ArrestSessionEnvelopeDto(
+    val session: ArrestSessionDto
+)
+
+@Serializable
+data class PaginatedSessionsResponseDto(
+    val items: List<ArrestSessionDto> = emptyList(),
+    val total: Int = 0,
+    val limit: Int = 20,
+    val offset: Int = 0
+)
+
+@Serializable
+data class ActiveSessionsResponseDto(
+    val items: List<ArrestSessionDto> = emptyList()
+)
+
+@Serializable
+data class AcknowledgeSessionRequestDto(
+    val deviceId: String,
+    val outcome: String,
+    val localSessionId: String? = null,
+    val localEngineState: String? = null,
+    val reason: String? = null
+)
+
+@Serializable
+data class SyncEventItemDto(
+    val clientEventId: String,
+    val eventType: String,
+    val fromEngineState: String? = null,
+    val toEngineState: String? = null,
+    val occurredAtClientMs: Long,
+    val localSessionId: String? = null,
+    val accumulatedPausedMs: Long? = null,
+    val reason: String? = null
+)
+
+@Serializable
+data class PostSessionEventsRequestDto(
+    val deviceId: String,
+    val events: List<SyncEventItemDto>
+)
+
+@Serializable
+data class PostSessionEventsResponseDto(
+    val session: ArrestSessionDto,
+    val processedCount: Int = 0,
+    val duplicateCount: Int = 0
+)
+
+@Serializable
+data class RemoteSessionCommandRequestDto(
+    val reason: String? = null,
+    val idempotencyKey: String? = null
+)
+
+@Serializable
+data class RemoteSessionCommandResponseDto(
+    val command: SessionCommandDto
+)
+
+@Serializable
+data class LiveSessionDashboardDeviceDto(
+    val deviceId: String,
+    val deviceName: String,
+    val deviceModel: String? = null,
+    val platform: String = "ANDROID",
+    val deviceStatus: String = "ACTIVE",
+    val lastSeenAt: String? = null
+)
+
+@Serializable
+data class LiveSessionDashboardItemDto(
+    val session: ArrestSessionDto,
+    val owner: PublicUserDto,
+    val initiator: PublicUserDto,
+    val targetDevice: LiveSessionDashboardDeviceDto? = null,
+    val remainingSeconds: Int? = null,
+    val pendingReleaseRequestsCount: Int = 0
+)
+
+@Serializable
+data class LiveSessionDashboardResponseDto(
+    val items: List<LiveSessionDashboardItemDto> = emptyList()
+)
+
+@Serializable
+data class SelectableAppCatalogItemDto(
+    val packageName: String,
+    val appLabel: String,
+    val category: String = "USER_APP",
+    val isStudyCandidate: Boolean = false
+)
+
+@Serializable
+data class UpsertDeviceAppCatalogRequestDto(
+    val apps: List<SelectableAppCatalogItemDto>
+)
+
+@Serializable
+data class DeviceAppCatalogDto(
+    val deviceId: String,
+    val ownerUserId: String,
+    val apps: List<SelectableAppCatalogItemDto> = emptyList(),
+    val filteredOutSystemCount: Int = 0,
+    val updatedAt: String? = null
+)
+
+@Serializable
+data class DeviceAppCatalogEnvelopeDto(
+    val catalog: DeviceAppCatalogDto
+)
+
+@Serializable
+data class TriggerScheduledArrestResponseDto(
+    val schedule: ScheduledArrestDto,
+    val sessionId: String,
+    val command: SessionCommandDto,
+    val idempotentReplay: Boolean = false
 )

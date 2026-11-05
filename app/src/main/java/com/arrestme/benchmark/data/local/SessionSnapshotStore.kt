@@ -47,6 +47,10 @@ class SessionSnapshotStore(context: Context) {
             editor.putLong(KEY_START_ELAPSED_MS, snapshot.startElapsedRealtimeMs)
             editor.putInt(KEY_BOOT_COUNT, snapshot.bootCountAtStart)
             editor.putLong(KEY_LAST_UPDATED_MS, snapshot.lastUpdatedWallMs)
+            editor.putString(KEY_CLOUD_SESSION_ID, snapshot.cloudSessionId)
+            editor.putString(KEY_AUTHORIZATION_ID, snapshot.authorizationId)
+            editor.putString(KEY_CONTROLLING_PARTNER_ID, snapshot.controllingPartnerUserId)
+            editor.putString(KEY_CONTROLLING_PARTNER_USERNAME, snapshot.controllingPartnerUsername)
         }
         editor.apply()
     }
@@ -96,7 +100,11 @@ class SessionSnapshotStore(context: Context) {
             accumulatedPausedMs = prefs.getLong(KEY_ACCUM_PAUSED_MS, 0L),
             startElapsedRealtimeMs = prefs.getLong(KEY_START_ELAPSED_MS, 0L),
             bootCountAtStart = prefs.getInt(KEY_BOOT_COUNT, 0),
-            lastUpdatedWallMs = prefs.getLong(KEY_LAST_UPDATED_MS, 0L)
+            lastUpdatedWallMs = prefs.getLong(KEY_LAST_UPDATED_MS, 0L),
+            cloudSessionId = prefs.getString(KEY_CLOUD_SESSION_ID, null),
+            authorizationId = prefs.getString(KEY_AUTHORIZATION_ID, null),
+            controllingPartnerUserId = prefs.getString(KEY_CONTROLLING_PARTNER_ID, null),
+            controllingPartnerUsername = prefs.getString(KEY_CONTROLLING_PARTNER_USERNAME, null)
         )
     }
 
@@ -130,6 +138,49 @@ class SessionSnapshotStore(context: Context) {
         prefs.edit().putLong(KEY_LAST_EXIT_TS_MS, timestampMs).apply()
     }
 
+    fun saveCloudToLocalSessionMapping(cloudSessionId: String, localSessionId: String) {
+        prefs.edit()
+            .putString("$KEY_PREFIX_CLOUD_TO_LOCAL$cloudSessionId", localSessionId)
+            .putString("$KEY_PREFIX_LOCAL_TO_CLOUD$localSessionId", cloudSessionId)
+            .apply()
+    }
+
+    fun getLocalSessionIdForCloudSession(cloudSessionId: String): String? =
+        prefs.getString("$KEY_PREFIX_CLOUD_TO_LOCAL$cloudSessionId", null)
+
+    fun getCloudSessionIdForLocalSession(localSessionId: String): String? =
+        prefs.getString("$KEY_PREFIX_LOCAL_TO_CLOUD$localSessionId", null)
+
+    fun getLastCommandSequenceNo(deviceId: String): Long =
+        prefs.getLong("$KEY_PREFIX_CMD_SEQ$deviceId", 0L)
+
+    fun setLastCommandSequenceNo(deviceId: String, sequenceNo: Long) {
+        val current = getLastCommandSequenceNo(deviceId)
+        if (sequenceNo > current) {
+            prefs.edit().putLong("$KEY_PREFIX_CMD_SEQ$deviceId", sequenceNo).apply()
+        }
+    }
+
+    fun saveLocalRulesBackupIfNone(rulesJson: String) {
+        if (!prefs.contains(KEY_LOCAL_RULES_BACKUP_JSON)) {
+            prefs.edit().putString(KEY_LOCAL_RULES_BACKUP_JSON, rulesJson).apply()
+        }
+    }
+
+    fun readLocalRulesBackupJson(): String? =
+        prefs.getString(KEY_LOCAL_RULES_BACKUP_JSON, null)
+
+    fun clearLocalRulesBackup() {
+        prefs.edit().remove(KEY_LOCAL_RULES_BACKUP_JSON).apply()
+    }
+
+    fun saveCachedSchedulesJson(schedulesJson: String) {
+        prefs.edit().putString(KEY_CACHED_SCHEDULES_JSON, schedulesJson).apply()
+    }
+
+    fun readCachedSchedulesJson(): String? =
+        prefs.getString(KEY_CACHED_SCHEDULES_JSON, null)
+
     companion object {
         private const val PREFS_NAME = "arrest_me_snapshot_store"
         private const val KEY_HAS_SESSION = "has_session"
@@ -149,10 +200,19 @@ class SessionSnapshotStore(context: Context) {
         private const val KEY_START_ELAPSED_MS = "start_elapsed_ms"
         private const val KEY_BOOT_COUNT = "boot_count"
         private const val KEY_LAST_UPDATED_MS = "last_updated_ms"
+        private const val KEY_CLOUD_SESSION_ID = "cloud_session_id"
+        private const val KEY_AUTHORIZATION_ID = "authorization_id"
+        private const val KEY_CONTROLLING_PARTNER_ID = "controlling_partner_id"
+        private const val KEY_CONTROLLING_PARTNER_USERNAME = "controlling_partner_username"
         private const val KEY_BLOCKED_PACKAGES = "blocked_packages"
         private const val KEY_ALLOWED_PACKAGES = "allowed_packages"
         private const val KEY_LAST_HEARTBEAT_MS = "last_heartbeat_ms"
         private const val KEY_CLEAN_SHUTDOWN = "clean_shutdown"
         private const val KEY_LAST_EXIT_TS_MS = "last_exit_ts_ms"
+        private const val KEY_PREFIX_CLOUD_TO_LOCAL = "map_cloud_to_local_"
+        private const val KEY_PREFIX_LOCAL_TO_CLOUD = "map_local_to_cloud_"
+        private const val KEY_PREFIX_CMD_SEQ = "cmd_seq_device_"
+        private const val KEY_LOCAL_RULES_BACKUP_JSON = "local_self_arrest_rules_backup_json"
+        private const val KEY_CACHED_SCHEDULES_JSON = "cached_upcoming_schedules_json"
     }
 }

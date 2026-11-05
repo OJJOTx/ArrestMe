@@ -250,8 +250,19 @@ class SessionController(
                 accumulatedPausedMs = 0L,
                 startElapsedRealtimeMs = startElapsed,
                 bootCountAtStart = bootCount,
-                lastUpdatedWallMs = startWall
+                lastUpdatedWallMs = startWall,
+                cloudSessionId = config.cloudSessionId,
+                authorizationId = config.authorizationId,
+                controllingPartnerUserId = config.controllingPartnerUserId,
+                controllingPartnerUsername = config.controllingPartnerUsername
             )
+
+            if (config.cloudSessionId != null) {
+                repository.snapshotStore.saveCloudToLocalSessionMapping(
+                    cloudSessionId = config.cloudSessionId,
+                    localSessionId = sessionId
+                )
+            }
 
             val entity = SessionEntity(
                 sessionId = sessionId,
@@ -487,6 +498,7 @@ class SessionController(
             )
 
             publishSnapshotLocked(stopped)
+            repository.restoreBackedUpLocalRulesIfPresent()
             watchdogJob?.cancel()
             watchdogJob = null
 
@@ -497,10 +509,31 @@ class SessionController(
         }
     }
 
+    /**
+     * Completes an active session in response to an authenticated remote partner command
+     * (`APPROVE_RELEASE` or `END_SESSION`), even when local emergency exit is disabled.
+     */
+    suspend fun forceCompleteRemoteSession(
+        reason: String = "Released remotely by controlling partner"
+    ): Boolean {
+        return controllerMutex.withLock {
+            val current = _activeSession.value ?: repository.snapshotStore.readSnapshot() ?: return@withLock false
+            if (!current.state.isInProgress) return@withLock false
+            val now = System.currentTimeMillis()
+            completeSessionLocked(
+                snapshot = current,
+                nowWallMs = now,
+                reason = reason
+            )
+            true
+        }
+    }
+
     suspend fun resetToIdle() {
         controllerMutex.withLock {
             val current = _activeSession.value
             if (current != null && current.state.isInProgress) return@withLock
+            repository.restoreBackedUpLocalRulesIfPresent()
             publishSnapshotLocked(null)
         }
     }
@@ -565,6 +598,7 @@ class SessionController(
         )
 
         publishSnapshotLocked(completed)
+        repository.restoreBackedUpLocalRulesIfPresent()
         watchdogJob?.cancel()
         watchdogJob = null
 
@@ -696,6 +730,9 @@ class SessionController(
             .toSet()
             .ifEmpty { setOf(AllowedCategory.CALLS, AllowedCategory.STUDY_APPS) }
 
+        val priorSnap = repository.snapshotStore.readSnapshot()
+        val mappedCloudId = repository.snapshotStore.getCloudSessionIdForLocalSession(sessionId)
+
         return ActiveSessionSnapshot(
             sessionId = sessionId,
             sessionType = runCatching { SessionType.valueOf(sessionType) }
@@ -715,7 +752,11 @@ class SessionController(
             accumulatedPausedMs = accumulatedPausedMs,
             startElapsedRealtimeMs = startElapsedRealtimeMs,
             bootCountAtStart = bootCountAtStart,
-            lastUpdatedWallMs = System.currentTimeMillis()
+            lastUpdatedWallMs = System.currentTimeMillis(),
+            cloudSessionId = priorSnap?.takeIf { it.sessionId == sessionId }?.cloudSessionId ?: mappedCloudId,
+            authorizationId = priorSnap?.takeIf { it.sessionId == sessionId }?.authorizationId,
+            controllingPartnerUserId = priorSnap?.takeIf { it.sessionId == sessionId }?.controllingPartnerUserId,
+            controllingPartnerUsername = priorSnap?.takeIf { it.sessionId == sessionId }?.controllingPartnerUsername
         )
     }
 }
