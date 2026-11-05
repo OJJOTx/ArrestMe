@@ -50,6 +50,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
@@ -819,7 +820,7 @@ class CloudCommandCoordinator(
             if (!perm.proposalId.isNullOrBlank() && !proposalId.isNullOrBlank() && perm.proposalId != proposalId) {
                 return "Command proposal ID mismatch with authorization"
             }
-            val cmdApprovedRev = commandPayload["approvedRevision"]?.jsonPrimitive?.intOrNull()
+            val cmdApprovedRev = commandPayload["approvedRevision"]?.jsonPrimitive?.intOrNull
             if (perm.approvedRevision != null && cmdApprovedRev != null && perm.approvedRevision != cmdApprovedRev) {
                 return "Command proposal revision mismatch with authorization"
             }
