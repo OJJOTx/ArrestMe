@@ -20,8 +20,8 @@ android {
         applicationId = "com.arrestme.benchmark"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 6
+        versionName = "0.6.0"
 
         buildConfigField("String", "API_BASE_URL", "\"${arrestMeApiBaseUrl.replace("\"", "\\\"")}\"")
 

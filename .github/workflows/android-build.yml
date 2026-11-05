@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build-debug-apk:
-    name: Assemble Debug APK (ArrestMe V0.3)
+    name: Assemble APK (ArrestMe V0.6)
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -75,27 +75,27 @@ jobs:
           if [ -n "$KEYSTORE_FILE" ] && [ -f "$KEYSTORE_FILE" ]; then
             echo "Signing with persistent release keystore..."
             ./gradlew assembleRelease --stacktrace 2>&1 | tee build-logs/gradle-assemble.log
-            cp app/build/outputs/apk/release/app-release.apk ArrestMe-v0.3.0.apk
-            cp ArrestMe-v0.3.0.apk ArrestMe-v0.3.0-debug.apk
+            cp app/build/outputs/apk/release/app-release.apk ArrestMe-v0.6.0.apk
+            cp ArrestMe-v0.6.0.apk ArrestMe-v0.6.0-debug.apk
           else
             echo "Release keystore secrets not detected; building assembleDebug..."
             ./gradlew assembleDebug --stacktrace 2>&1 | tee build-logs/gradle-assemble.log
-            cp app/build/outputs/apk/debug/app-debug.apk ArrestMe-v0.3.0-debug.apk
-            cp ArrestMe-v0.3.0-debug.apk ArrestMe-v0.3.0.apk
+            cp app/build/outputs/apk/debug/app-debug.apk ArrestMe-v0.6.0-debug.apk
+            cp ArrestMe-v0.6.0-debug.apk ArrestMe-v0.6.0.apk
           fi
 
       - name: Verify Generated APK Exists
         run: |
-          ls -lh ArrestMe-v0.3.0.apk
-          ls -lh ArrestMe-v0.3.0-debug.apk
+          ls -lh ArrestMe-v0.6.0.apk
+          ls -lh ArrestMe-v0.6.0-debug.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: arrest-me-v0.3-apk
+          name: arrest-me-v0.6-apk
           path: |
-            ArrestMe-v0.3.0.apk
-            ArrestMe-v0.3.0-debug.apk
+            ArrestMe-v0.6.0.apk
+            ArrestMe-v0.6.0-debug.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -103,27 +103,26 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.3.0-build-${{ github.run_number }}
-          name: "Arrest Me v0.3.0 - Build #${{ github.run_number }}"
+          tag_name: v0.6.0-build-${{ github.run_number }}
+          name: "Arrest Me v0.6.0 - Build #${{ github.run_number }}"
           body: |
-            ## Arrest Me v0.3.0 Release Build (#${{ github.run_number }})
+            ## Arrest Me v0.6.0 Release Build (#${{ github.run_number }})
             Automated APK build from commit `${{ github.sha }}`.
 
-            ### Features in this build (V0.3 Cloud Integration + Offline Arrest Engine):
-            1. **Cloud Authentication & Profile**: Register, Sign In, Sign Out, profile synchronization (`/api/v1/users/me`), single-flight rotating refresh tokens, and Android Keystore AES-256-GCM encrypted token storage.
-            2. **Configurable Backend & Isolated Sessions**: Supports Official Server (`ARRESTME_API_BASE_URL`), Custom Self-Hosted HTTPS Backend, and Local-Only Offline mode with strictly isolated per-server sessions.
-            3. **Device Installation Registration**: Privacy-preserving random installation UUID registration (`/api/v1/devices`), metadata sync, duplicate prevention, and automatic deregistration on logout.
-            4. **100% Offline Arrest Engine**: Unbackable overlay, status-bar protection, Whitelist/Allowlist/Block-Selected modes, and strict lock timer remain completely independent of cloud connectivity.
-            5. **Persistent Release Signing**: Signed with a persistent cryptographic certificate across all GitHub CI builds to support seamless over-the-air in-place updates.
+            ### Features in this release (V0.4, V0.5 & V0.6 Partner System):
+            1. **V0.4 Advanced Partners & Negotiations**: Exact username search, invitation codes, directional approval policies (`requireApprovalBeforeArrest`), versioned proposals, counteroffers, conflict 409 protection, and scheduled arrests.
+            2. **V0.5 Remote Arrest Execution & Selectable App Catalog**: Controlled package-level app catalog, decoupled CloudCommandCoordinator, offline schedule materialization, live session dashboard, and automatic restoration of original self-arrest rules.
+            3. **V0.6 Full In-App Chat + Structured Requests**: Dedicated partner conversations, inline interactive structured request cards (early release, temporary app access, mode changes, extensions), scoped temporary app overrides, and active arrest communication panel without breaching lockdown.
+            4. **Core Local Engine Integrity**: Local Self Arrest engine, overlay manager, and accessibility service remain 100% functional and offline-independent.
 
             ### Download:
-            Download **`ArrestMe-v0.3.0.apk`** below to install directly on your Android device.
+            Download **`ArrestMe-v0.6.0.apk`** below to install directly on your Android device.
           draft: false
           prerelease: false
           make_latest: true
           files: |
-            ArrestMe-v0.3.0.apk
-            ArrestMe-v0.3.0-debug.apk
+            ArrestMe-v0.6.0.apk
+            ArrestMe-v0.6.0-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

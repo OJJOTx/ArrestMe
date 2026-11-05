@@ -13,7 +13,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
@@ -175,7 +175,7 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
                     val icon = when (dest) {
                         BenchmarkRoute.HOME -> Icons.Default.Home
                         BenchmarkRoute.PERMISSIONS -> Icons.Default.CheckCircle
-                        BenchmarkRoute.APPS -> Icons.Default.List
+                        BenchmarkRoute.APPS -> Icons.AutoMirrored.Filled.List
                         BenchmarkRoute.SESSION -> Icons.Default.Lock
                         BenchmarkRoute.PARTNERS -> Icons.Default.Person
                         BenchmarkRoute.BENCHMARK -> Icons.Default.Info

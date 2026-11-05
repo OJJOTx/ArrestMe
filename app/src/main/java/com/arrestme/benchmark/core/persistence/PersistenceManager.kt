@@ -90,7 +90,7 @@ class PersistenceManager(
                     persistedSnapshot.state.isInProgress &&
                     latestExit.timestamp >= persistedSnapshot.startTimestampMs
 
-                if (activeDuringExit && persistedSnapshot != null) {
+                if (activeDuringExit) {
                     if (latestExit.reason == ApplicationExitInfo.REASON_USER_REQUESTED) {
                         unexpectedDeath = true
                         exitSummary = "Android Force-Stop / User-Requested Stop detected ($reasonLabel: $desc)"
