@@ -42,6 +42,12 @@ enum class BlockingRuleMode(val label: String, val description: String) {
     )
 }
 
+data class TemporaryAppAccessOverride(
+    val grantId: String,
+    val packageName: String,
+    val expiresAtWallMs: Long
+)
+
 data class SessionConfig(
     val sessionType: SessionType = SessionType.SELF_ARREST,
     val durationMinutes: Int = 15,
@@ -82,8 +88,15 @@ data class ActiveSessionSnapshot(
     val cloudSessionId: String? = null,
     val authorizationId: String? = null,
     val controllingPartnerUserId: String? = null,
-    val controllingPartnerUsername: String? = null
+    val controllingPartnerUsername: String? = null,
+    val temporaryAccessOverrides: List<TemporaryAppAccessOverride> = emptyList()
 ) {
+    fun isPackageTemporarilyAllowed(
+        packageName: String,
+        nowWallMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        return temporaryAccessOverrides.any { it.packageName == packageName && nowWallMs < it.expiresAtWallMs }
+    }
     fun computeRemainingMs(nowWallMs: Long = System.currentTimeMillis()): Long {
         return when (state) {
             SessionState.PAUSED -> {

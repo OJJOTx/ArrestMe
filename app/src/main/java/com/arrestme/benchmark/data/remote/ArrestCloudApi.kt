@@ -51,6 +51,16 @@ import com.arrestme.benchmark.data.remote.dto.UpdateApprovalPolicyRequestDto
 import com.arrestme.benchmark.data.remote.dto.UpdateDeviceRequestDto
 import com.arrestme.benchmark.data.remote.dto.UpdateProfileRequestDto
 import com.arrestme.benchmark.data.remote.dto.UpsertDeviceAppCatalogRequestDto
+import com.arrestme.benchmark.data.remote.dto.ConversationEnvelopeDto
+import com.arrestme.benchmark.data.remote.dto.ConversationListResponseDto
+import com.arrestme.benchmark.data.remote.dto.CreateStructuredRequestDto
+import com.arrestme.benchmark.data.remote.dto.MarkConversationReadRequestDto
+import com.arrestme.benchmark.data.remote.dto.MessageEnvelopeDto
+import com.arrestme.benchmark.data.remote.dto.MessageListResponseDto
+import com.arrestme.benchmark.data.remote.dto.RespondStructuredRequestDto
+import com.arrestme.benchmark.data.remote.dto.SendTextMessageRequestDto
+import com.arrestme.benchmark.data.remote.dto.StructuredRequestEnvelopeDto
+import com.arrestme.benchmark.data.remote.dto.TemporaryGrantsListResponseDto
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -330,4 +340,73 @@ interface ArrestCloudApi {
         @Path("id") sessionId: String,
         @Body body: RemoteSessionCommandRequestDto = RemoteSessionCommandRequestDto()
     ): Response<RemoteSessionCommandResponseDto>
+
+    // ========================================================================
+    // V0.6 — Full Chat, Structured Requests & Live Session Modifications
+    // ========================================================================
+
+    @GET("api/v1/conversations")
+    suspend fun listConversations(
+        @Query("limit") limit: Int = 50,
+        @Query("offset") offset: Int = 0
+    ): Response<ConversationListResponseDto>
+
+    @GET("api/v1/conversations/partnership/{partnershipId}")
+    suspend fun getOrCreateConversationForPartnership(
+        @Path("partnershipId") partnershipId: String
+    ): Response<ConversationEnvelopeDto>
+
+    @GET("api/v1/conversations/{id}")
+    suspend fun getConversation(
+        @Path("id") conversationId: String
+    ): Response<ConversationEnvelopeDto>
+
+    @GET("api/v1/conversations/{id}/messages")
+    suspend fun listMessages(
+        @Path("id") conversationId: String,
+        @Query("limit") limit: Int = 50,
+        @Query("offset") offset: Int = 0,
+        @Query("beforeDate") beforeDate: String? = null,
+        @Query("afterDate") afterDate: String? = null
+    ): Response<MessageListResponseDto>
+
+    @POST("api/v1/conversations/{id}/messages")
+    suspend fun sendTextMessage(
+        @Path("id") conversationId: String,
+        @Body body: SendTextMessageRequestDto
+    ): Response<MessageEnvelopeDto>
+
+    @POST("api/v1/conversations/{id}/structured-requests")
+    suspend fun createStructuredRequest(
+        @Path("id") conversationId: String,
+        @Body body: CreateStructuredRequestDto
+    ): Response<MessageEnvelopeDto>
+
+    @POST("api/v1/conversations/{id}/read")
+    suspend fun markConversationRead(
+        @Path("id") conversationId: String,
+        @Body body: MarkConversationReadRequestDto
+    ): Response<Unit>
+
+    @POST("api/v1/structured-requests/{id}/respond")
+    suspend fun respondToStructuredRequest(
+        @Path("id") requestId: String,
+        @Body body: RespondStructuredRequestDto
+    ): Response<StructuredRequestEnvelopeDto>
+
+    @POST("api/v1/structured-requests/{id}/cancel")
+    suspend fun cancelStructuredRequest(
+        @Path("id") requestId: String
+    ): Response<StructuredRequestEnvelopeDto>
+
+    @GET("api/v1/sessions/{id}/temporary-grants")
+    suspend fun listActiveTemporaryGrants(
+        @Path("id") sessionId: String
+    ): Response<TemporaryGrantsListResponseDto>
+
+    @POST("api/v1/sessions/{id}/temporary-grants/{grantId}/revoke")
+    suspend fun revokeTemporaryGrant(
+        @Path("id") sessionId: String,
+        @Path("grantId") grantId: String
+    ): Response<Unit>
 }

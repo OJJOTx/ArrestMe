@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
@@ -61,6 +62,7 @@ fun PartnerDetailsScreen(
     onOpenCreateProposal: (String) -> Unit,
     onOpenNegotiationDetails: (String) -> Unit,
     onRevokePermission: (permissionId: String, partnershipId: String) -> Unit,
+    onOpenChat: (partnershipId: String) -> Unit = {},
     onRemovePartner: (partnershipId: String) -> Unit,
     onBlockPartner: (partnershipId: String) -> Unit,
     onBack: () -> Unit
@@ -209,6 +211,15 @@ fun PartnerDetailsScreen(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Approval Policy")
                     }
+                }
+
+                OutlinedButton(
+                    onClick = { onOpenChat(partnershipId) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Email, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Chat & Live Requests")
                 }
             }
         }

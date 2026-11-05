@@ -79,6 +79,9 @@ interface LocalSessionEngineBridge {
     fun setLastCommandSequenceNo(deviceId: String, sequenceNo: Long)
     fun saveCachedSchedulesJson(schedulesJson: String)
     fun readCachedSchedulesJson(): String?
+    suspend fun applyTemporaryAppAccessOverride(grantId: String, packageName: String, expiresAtWallMs: Long)
+    suspend fun revokeTemporaryAppAccessOverride(grantId: String)
+    suspend fun extendActiveSession(extensionMs: Long)
 }
 
 class DefaultLocalSessionEngineBridge(
@@ -110,6 +113,12 @@ class DefaultLocalSessionEngineBridge(
         arrestRepository.snapshotStore.saveCachedSchedulesJson(schedulesJson)
     override fun readCachedSchedulesJson(): String? =
         arrestRepository.snapshotStore.readCachedSchedulesJson()
+    override suspend fun applyTemporaryAppAccessOverride(grantId: String, packageName: String, expiresAtWallMs: Long) =
+        sessionController.applyTemporaryAppAccessOverride(grantId, packageName, expiresAtWallMs)
+    override suspend fun revokeTemporaryAppAccessOverride(grantId: String) =
+        sessionController.revokeTemporaryAppAccessOverride(grantId)
+    override suspend fun extendActiveSession(extensionMs: Long) =
+        sessionController.extendActiveSession(extensionMs)
 }
 
 /**
@@ -395,6 +404,9 @@ class CloudCommandCoordinator(
             "START_ARREST" -> executeStartArrestCommandLocked(api, myUserId, myDeviceId, command, nowMs)
             "END_SESSION", "APPROVE_RELEASE" -> executeRemoteEndOrReleaseCommandLocked(api, myDeviceId, command)
             "SYNC_SESSION" -> executeSyncSessionCommandLocked(api, myDeviceId, command)
+            "APPLY_TEMPORARY_APP_ACCESS" -> executeApplyTemporaryAppAccessLocked(api, myDeviceId, command, nowMs)
+            "REVOKE_TEMPORARY_APP_ACCESS" -> executeRevokeTemporaryAppAccessLocked(api, myDeviceId, command)
+            "UPDATE_SESSION_RULES" -> executeUpdateSessionRulesLocked(api, myDeviceId, command)
             else -> {
                 // Unknown or future command type: leave or acknowledge if needed
             }
@@ -678,6 +690,67 @@ class CloudCommandCoordinator(
                     deviceId = myDeviceId,
                     status = "EXECUTED"
                 )
+            )
+        }
+    }
+
+    private suspend fun executeApplyTemporaryAppAccessLocked(
+        api: ArrestCloudApi,
+        myDeviceId: String,
+        command: SessionCommandDto,
+        nowMs: Long
+    ) {
+        val payload = command.payload
+        val grantId = payload["grantId"]?.jsonPrimitive?.contentOrNull() ?: command.commandId
+        val packageName = payload["packageName"]?.jsonPrimitive?.contentOrNull() ?: return
+        val expiresAtUtcStr = payload["expiresAtUtc"]?.jsonPrimitive?.contentOrNull()
+        val durationMinutes = payload["durationMinutes"]?.jsonPrimitive?.intOrNull ?: 10
+        val expiresAtMs = expiresAtUtcStr?.let { parseIsoUtcMs(it) } ?: (nowMs + durationMinutes * 60_000L)
+
+        engineBridge.applyTemporaryAppAccessOverride(grantId, packageName, expiresAtMs)
+
+        runCatching {
+            api.acknowledgeCommand(
+                commandId = command.commandId,
+                body = AcknowledgeCommandRequestDto(deviceId = myDeviceId, status = "EXECUTED")
+            )
+        }
+    }
+
+    private suspend fun executeRevokeTemporaryAppAccessLocked(
+        api: ArrestCloudApi,
+        myDeviceId: String,
+        command: SessionCommandDto
+    ) {
+        val payload = command.payload
+        val grantId = payload["grantId"]?.jsonPrimitive?.contentOrNull() ?: return
+
+        engineBridge.revokeTemporaryAppAccessOverride(grantId)
+
+        runCatching {
+            api.acknowledgeCommand(
+                commandId = command.commandId,
+                body = AcknowledgeCommandRequestDto(deviceId = myDeviceId, status = "EXECUTED")
+            )
+        }
+    }
+
+    private suspend fun executeUpdateSessionRulesLocked(
+        api: ArrestCloudApi,
+        myDeviceId: String,
+        command: SessionCommandDto
+    ) {
+        val payload = command.payload
+        val action = payload["action"]?.jsonPrimitive?.contentOrNull()
+        if (action == "SESSION_EXTENSION") {
+            val extMinutes = payload["extendedByMinutes"]?.jsonPrimitive?.intOrNull ?: 15
+            engineBridge.extendActiveSession(extMinutes * 60_000L)
+        }
+
+        runCatching {
+            api.acknowledgeCommand(
+                commandId = command.commandId,
+                body = AcknowledgeCommandRequestDto(deviceId = myDeviceId, status = "EXECUTED")
             )
         }
     }

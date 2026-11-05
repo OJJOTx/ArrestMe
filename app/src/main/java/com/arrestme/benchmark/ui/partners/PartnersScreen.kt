@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
@@ -84,6 +85,8 @@ fun PartnersScreen(
     onOpenNegotiationDetails: (proposalId: String) -> Unit,
     onOpenScheduledArrests: () -> Unit,
     onOpenLiveDashboard: () -> Unit,
+    onOpenConversations: () -> Unit = {},
+    onOpenChatForPartnership: (partnershipId: String) -> Unit = {},
     onOpenAccountSettings: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -255,6 +258,15 @@ fun PartnersScreen(
                 Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(14.dp))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text("Schedules ($activeScheduleCount)", fontSize = 11.sp)
+            }
+
+            OutlinedButton(
+                onClick = onOpenConversations,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.Email, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Chat", fontSize = 11.sp)
             }
 
             Button(
@@ -584,8 +596,13 @@ fun PartnersScreen(
                                         )
                                     }
                                 }
-                                OutlinedButton(onClick = { onOpenPartnerDetails(p.id) }) {
-                                    Text("Profile")
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    OutlinedButton(onClick = { onOpenChatForPartnership(p.id) }) {
+                                        Text("Chat")
+                                    }
+                                    OutlinedButton(onClick = { onOpenPartnerDetails(p.id) }) {
+                                        Text("Profile")
+                                    }
                                 }
                             }
                         }

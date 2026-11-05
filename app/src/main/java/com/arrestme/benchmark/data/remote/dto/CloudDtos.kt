@@ -771,3 +771,148 @@ data class TriggerScheduledArrestResponseDto(
     val command: SessionCommandDto,
     val idempotentReplay: Boolean = false
 )
+
+@Serializable
+data class UserSummaryDto(
+    val id: String,
+    val username: String,
+    val displayName: String,
+    val avatarUrl: String? = null
+)
+
+@Serializable
+data class ConversationMemberDto(
+    val userId: String,
+    val username: String,
+    val displayName: String,
+    val unreadCount: Int = 0
+)
+
+@Serializable
+data class ConversationDto(
+    val id: String,
+    val partnershipId: String,
+    val partner: UserSummaryDto? = null,
+    val members: List<ConversationMemberDto> = emptyList(),
+    val unreadCount: Int = 0,
+    val lastMessage: MessageDto? = null,
+    val createdAt: String,
+    val updatedAt: String
+)
+
+@Serializable
+data class ConversationEnvelopeDto(
+    val conversation: ConversationDto
+)
+
+@Serializable
+data class ConversationListResponseDto(
+    val items: List<ConversationDto> = emptyList(),
+    val total: Int = 0,
+    val limit: Int = 50,
+    val offset: Int = 0
+)
+
+@Serializable
+data class MessageDto(
+    val id: String,
+    val conversationId: String,
+    val sender: UserSummaryDto,
+    val clientMessageId: String,
+    val messageType: String = "TEXT",
+    val textContent: String? = null,
+    val structuredRequest: StructuredRequestDto? = null,
+    val status: String = "SENT",
+    val createdAt: String,
+    val updatedAt: String
+)
+
+@Serializable
+data class MessageEnvelopeDto(
+    val message: MessageDto
+)
+
+@Serializable
+data class MessageListResponseDto(
+    val items: List<MessageDto> = emptyList(),
+    val total: Int = 0,
+    val limit: Int = 50,
+    val offset: Int = 0
+)
+
+@Serializable
+data class StructuredRequestDto(
+    val id: String,
+    val messageId: String,
+    val conversationId: String,
+    val requestType: String,
+    val initiator: UserSummaryDto? = null,
+    val recipient: UserSummaryDto? = null,
+    val sessionId: String? = null,
+    val status: String = "PENDING",
+    val durationMinutes: Int? = null,
+    val targetPackage: String? = null,
+    val messageText: String? = null,
+    val parameters: JsonObject? = null,
+    val decisionReason: String? = null,
+    val decidedAt: String? = null,
+    val expiresAt: String? = null,
+    val createdAt: String,
+    val updatedAt: String
+)
+
+@Serializable
+data class StructuredRequestEnvelopeDto(
+    val request: StructuredRequestDto
+)
+
+@Serializable
+data class SendTextMessageRequestDto(
+    val clientMessageId: String,
+    val text: String
+)
+
+@Serializable
+data class CreateStructuredRequestDto(
+    val clientMessageId: String,
+    val requestType: String,
+    val sessionId: String? = null,
+    val targetPackage: String? = null,
+    val durationMinutes: Int? = null,
+    val parameters: JsonObject? = null,
+    val messageText: String? = null
+)
+
+@Serializable
+data class RespondStructuredRequestDto(
+    val decision: String,
+    val reason: String? = null
+)
+
+@Serializable
+data class MarkConversationReadRequestDto(
+    val lastReadMessageId: String
+)
+
+@Serializable
+data class TemporaryGrantDto(
+    val id: String,
+    val sessionId: String,
+    val deviceId: String,
+    val packageName: String,
+    val grantedDurationMinutes: Int,
+    val grantedByUserId: String,
+    val startsAt: String,
+    val expiresAt: String,
+    val revokedAt: String? = null,
+    val isCurrentlyActive: Boolean = true,
+    val createdAt: String
+) {
+    val targetPackage: String get() = packageName
+    val durationMinutes: Int get() = grantedDurationMinutes
+}
+
+@Serializable
+data class TemporaryGrantsListResponseDto(
+    val items: List<TemporaryGrantDto> = emptyList()
+)

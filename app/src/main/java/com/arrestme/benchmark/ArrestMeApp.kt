@@ -14,6 +14,7 @@ import com.arrestme.benchmark.core.backend.BackendAuthState
 import com.arrestme.benchmark.core.backend.BackendConfigRepository
 import com.arrestme.benchmark.core.backend.BackendPreferencesDataSource
 import com.arrestme.benchmark.core.backend.CloudCommandCoordinator
+import com.arrestme.benchmark.core.backend.PartnerChatRepository
 import com.arrestme.benchmark.core.backend.PartnerSystemRepository
 import com.arrestme.benchmark.core.backend.backendDataStore
 import com.arrestme.benchmark.core.blocking.BlockingEngine
@@ -94,6 +95,9 @@ class ArrestMeApp : Application() {
     lateinit var partnerSystemRepository: PartnerSystemRepository
         private set
 
+    lateinit var partnerChatRepository: PartnerChatRepository
+        private set
+
     lateinit var cloudCommandCoordinator: CloudCommandCoordinator
         private set
 
@@ -129,6 +133,13 @@ class ArrestMeApp : Application() {
             connectivityChecker = connectivityChecker
         )
         partnerSystemRepository = PartnerSystemRepository(
+            preferencesDataSource = backendPreferencesDataSource,
+            configRepository = backendConfigRepository,
+            authRepository = backendAuthRepository,
+            apiClientFactory = apiClientFactory,
+            scope = appScope
+        )
+        partnerChatRepository = PartnerChatRepository(
             preferencesDataSource = backendPreferencesDataSource,
             configRepository = backendConfigRepository,
             authRepository = backendAuthRepository,

@@ -557,6 +557,39 @@ class SessionController(
         }
     }
 
+    suspend fun applyTemporaryAppAccessOverride(grantId: String, packageName: String, expiresAtWallMs: Long) {
+        controllerMutex.withLock {
+            val current = _activeSession.value ?: return@withLock
+            val existing = current.temporaryAccessOverrides.filterNot { it.grantId == grantId || it.packageName == packageName }
+            val updatedOverrides = existing + TemporaryAppAccessOverride(grantId, packageName, expiresAtWallMs)
+            val updatedSnapshot = current.copy(temporaryAccessOverrides = updatedOverrides)
+            publishSnapshotLocked(updatedSnapshot)
+        }
+    }
+
+    suspend fun revokeTemporaryAppAccessOverride(grantId: String) {
+        controllerMutex.withLock {
+            val current = _activeSession.value ?: return@withLock
+            val updatedOverrides = current.temporaryAccessOverrides.filterNot { it.grantId == grantId }
+            val updatedSnapshot = current.copy(temporaryAccessOverrides = updatedOverrides)
+            publishSnapshotLocked(updatedSnapshot)
+        }
+    }
+
+    suspend fun extendActiveSession(extensionMs: Long) {
+        controllerMutex.withLock {
+            val current = _activeSession.value ?: return@withLock
+            if (!current.state.isInProgress) return@withLock
+            val newEnd = current.endTimestampMs + extensionMs
+            val updatedSnapshot = current.copy(
+                endTimestampMs = newEnd,
+                lastUpdatedWallMs = System.currentTimeMillis()
+            )
+            updateSessionStateInDbLocked(updatedSnapshot)
+            publishSnapshotLocked(updatedSnapshot)
+        }
+    }
+
     private suspend fun completeSessionLocked(
         snapshot: ActiveSessionSnapshot,
         nowWallMs: Long,

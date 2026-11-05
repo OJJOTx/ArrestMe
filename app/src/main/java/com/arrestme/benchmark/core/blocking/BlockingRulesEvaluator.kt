@@ -103,6 +103,13 @@ class BlockingRulesEvaluator(
             return BlockingDecision.AllowHomeLauncher
         }
 
+        // V0.6 Temporary partner override takes precedence over ordinary block rules
+        if (session.isPackageTemporarilyAllowed(packageName)) {
+            return BlockingDecision.AllowPermittedApp(
+                "Temporarily allowed by controlling partner until override expires ($packageName)"
+            )
+        }
+
         // Explicitly allowed study apps take precedence when Study Apps category is active
         if (AllowedCategory.STUDY_APPS in session.allowedCategories &&
             packageName in allowedStudyPackages

@@ -176,6 +176,10 @@ class CloudCommandCoordinatorV05Test {
         }
 
         override fun readCachedSchedulesJson(): String? = cachedSchedulesJson
+
+        override suspend fun applyTemporaryAppAccessOverride(grantId: String, packageName: String, expiresAtWallMs: Long) {}
+        override suspend fun revokeTemporaryAppAccessOverride(grantId: String) {}
+        override suspend fun extendActiveSession(extensionMs: Long) {}
     }
 
     private data class V05CoordinatorHarness(

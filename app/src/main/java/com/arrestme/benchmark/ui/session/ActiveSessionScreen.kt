@@ -47,6 +47,8 @@ import com.arrestme.benchmark.core.session.SessionState
 import com.arrestme.benchmark.core.session.SessionType
 import com.arrestme.benchmark.data.local.AppRuleEntity
 import com.arrestme.benchmark.data.local.AppRuleType
+import com.arrestme.benchmark.data.remote.dto.TemporaryGrantDto
+import com.arrestme.benchmark.ui.chat.ActiveArrestCommunicationPanel
 import com.arrestme.benchmark.ui.navigation.BenchmarkRoute
 import com.arrestme.benchmark.ui.navigation.formatDurationMmSs
 import com.arrestme.benchmark.ui.navigation.formatWallClockTime
@@ -63,7 +65,12 @@ fun ActiveSessionScreen(
     onResumeSession: () -> Unit,
     onEmergencyStop: () -> Unit,
     onResetIdle: () -> Unit,
-    onNavigate: (BenchmarkRoute) -> Unit
+    onNavigate: (BenchmarkRoute) -> Unit,
+    onOpenPartnerChat: () -> Unit = {},
+    onRequestEarlyRelease: (plea: String) -> Unit = {},
+    onRequestTemporaryAccess: (packageName: String, minutes: Int, plea: String) -> Unit = { _, _, _ -> },
+    onRevokeGrant: (grantId: String) -> Unit = {},
+    activeGrants: List<TemporaryGrantDto> = emptyList()
 ) {
     var goalText by rememberSaveable { mutableStateOf("Finish studying chapter 3") }
     var durationMinutes by rememberSaveable { mutableIntStateOf(15) }
@@ -245,6 +252,18 @@ fun ActiveSessionScreen(
                         }
                     }
                 }
+            }
+
+            if (activeSession.sessionType == SessionType.PARTNER_ARREST || activeGrants.isNotEmpty()) {
+                ActiveArrestCommunicationPanel(
+                    activeSession = activeSession,
+                    activeGrants = activeGrants,
+                    isSending = false,
+                    onOpenFullChat = onOpenPartnerChat,
+                    onRequestEarlyRelease = onRequestEarlyRelease,
+                    onRequestTemporaryAccess = onRequestTemporaryAccess,
+                    onRevokeGrant = onRevokeGrant
+                )
             }
         } else {
             // Terminal session banner if just finished

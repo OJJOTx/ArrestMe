@@ -47,6 +47,9 @@ import com.arrestme.benchmark.ui.BenchmarkViewModel
 import com.arrestme.benchmark.ui.account.AccountScreen
 import com.arrestme.benchmark.ui.apps.AppSelectionScreen
 import com.arrestme.benchmark.ui.benchmark.BenchmarkScreen
+import com.arrestme.benchmark.ui.chat.ActiveArrestCommunicationPanel
+import com.arrestme.benchmark.ui.chat.ConversationListScreen
+import com.arrestme.benchmark.ui.chat.PartnerChatScreen
 import com.arrestme.benchmark.ui.diagnostics.DiagnosticsScreen
 import com.arrestme.benchmark.ui.home.HomeScreen
 import com.arrestme.benchmark.ui.navigation.BenchmarkRoute
@@ -129,6 +132,14 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
     val liveDashboardItems by vm.liveDashboardItems.collectAsStateWithLifecycle()
     val isSyncingCommands by vm.isSyncingCommands.collectAsStateWithLifecycle()
     val coordinatorBanner by vm.coordinatorBanner.collectAsStateWithLifecycle()
+
+    // V0.6 Full Chat & Structured Requests state
+    val conversations by vm.conversations.collectAsStateWithLifecycle()
+    val activeConversation by vm.activeConversation.collectAsStateWithLifecycle()
+    val chatMessages by vm.chatMessages.collectAsStateWithLifecycle()
+    val activeTemporaryGrants by vm.activeTemporaryGrants.collectAsStateWithLifecycle()
+    val isChatLoading by vm.isChatLoading.collectAsStateWithLifecycle()
+    val chatErrorMessage by vm.chatErrorMessage.collectAsStateWithLifecycle()
 
     LaunchedEffect(coordinatorBanner) {
         val msg = coordinatorBanner ?: return@LaunchedEffect
@@ -225,7 +236,29 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
                         onResumeSession = vm::resumeSession,
                         onEmergencyStop = vm::emergencyStopSession,
                         onResetIdle = vm::resetFinishedSessionToIdle,
-                        onNavigate = ::navigateTo
+                        onNavigate = ::navigateTo,
+                        onOpenPartnerChat = {
+                            navController.navigate(PartnerSubRoutes.CONVERSATIONS)
+                        },
+                        onRequestEarlyRelease = { plea ->
+                            val sId = activeSession?.sessionId
+                            val conv = conversations.firstOrNull()
+                            if (conv != null) {
+                                vm.sendStructuredRequest(conv.id, "REQUEST_EARLY_RELEASE", sId, null, null, plea)
+                            }
+                        },
+                        onRequestTemporaryAccess = { pkg, mins, plea ->
+                            val sId = activeSession?.sessionId
+                            val conv = conversations.firstOrNull()
+                            if (conv != null) {
+                                vm.sendStructuredRequest(conv.id, "REQUEST_TEMPORARY_APP_ACCESS", sId, pkg, mins, plea)
+                            }
+                        },
+                        onRevokeGrant = { grantId ->
+                            val sId = activeSession?.sessionId ?: ""
+                            vm.revokeTemporaryGrant(sId, grantId)
+                        },
+                        activeGrants = activeTemporaryGrants
                     )
                 }
                 composable(BenchmarkRoute.PARTNERS.route) {
@@ -259,6 +292,14 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
                         },
                         onOpenLiveDashboard = {
                             navController.navigate(PartnerSubRoutes.LIVE_DASHBOARD)
+                        },
+                        onOpenConversations = {
+                            navController.navigate(PartnerSubRoutes.CONVERSATIONS)
+                        },
+                        onOpenChatForPartnership = { partnershipId ->
+                            vm.openConversationForPartnership(partnershipId) { convId ->
+                                navController.navigate(PartnerSubRoutes.partnerChat(convId))
+                            }
                         },
                         onOpenAccountSettings = {
                             navigateTo(BenchmarkRoute.ACCOUNT)
@@ -298,6 +339,11 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
                         },
                         onOpenNegotiationDetails = { propId ->
                             navController.navigate(PartnerSubRoutes.negotiationDetails(propId))
+                        },
+                        onOpenChat = { id ->
+                            vm.openConversationForPartnership(id) { convId ->
+                                navController.navigate(PartnerSubRoutes.partnerChat(convId))
+                            }
                         },
                         onRevokePermission = vm::revokePermission,
                         onRemovePartner = { id ->
@@ -393,6 +439,48 @@ private fun ArrestMeBenchmarkApp(vm: BenchmarkViewModel = viewModel()) {
                         onRequestRemoteEnd = { id -> vm.requestRemoteEndSession(id) },
                         onRequestRemoteSync = { id -> vm.requestRemoteSyncSession(id) },
                         onUploadAppCatalog = vm::uploadSelectableAppCatalog,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(PartnerSubRoutes.CONVERSATIONS) {
+                    ConversationListScreen(
+                        conversations = conversations,
+                        isLoading = isChatLoading,
+                        errorMessage = chatErrorMessage,
+                        onRefresh = vm::refreshConversations,
+                        onConversationClick = { convId ->
+                            vm.selectConversation(convId)
+                            navController.navigate(PartnerSubRoutes.partnerChat(convId))
+                        },
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = PartnerSubRoutes.PARTNER_CHAT,
+                    arguments = listOf(navArgument("conversationId") { type = NavType.StringType })
+                ) { entry ->
+                    val convId = entry.arguments?.getString("conversationId").orEmpty()
+                    val currentUserId = (backendAuthState as? BackendAuthState.Authenticated)?.credentials?.userId
+                    LaunchedEffect(convId) {
+                        vm.selectConversation(convId)
+                    }
+                    PartnerChatScreen(
+                        conversation = activeConversation,
+                        messages = chatMessages,
+                        currentUserId = currentUserId,
+                        isLoading = isChatLoading,
+                        errorMessage = chatErrorMessage,
+                        activeSessionId = activeSession?.sessionId,
+                        onRefresh = { vm.refreshChatMessages(convId) },
+                        onSendMessage = { text -> vm.sendChatMessage(convId, text) },
+                        onSendStructuredRequest = { type, sessId, pkg, dur, msg ->
+                            vm.sendStructuredRequest(convId, type, sessId, pkg, dur, msg)
+                        },
+                        onRespondToRequest = { reqId, decision, reason ->
+                            vm.respondToStructuredRequest(reqId, decision, reason)
+                        },
+                        onCancelRequest = vm::cancelStructuredRequest,
+                        onMarkRead = { msgId -> vm.markConversationRead(convId, msgId) },
                         onBack = { navController.popBackStack() }
                     )
                 }

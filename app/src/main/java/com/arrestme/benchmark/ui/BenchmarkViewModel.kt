@@ -26,17 +26,21 @@ import com.arrestme.benchmark.data.local.DiagnosticEventEntity
 import com.arrestme.benchmark.data.local.SessionEntity
 import com.arrestme.benchmark.data.local.SessionTransitionEntity
 import com.arrestme.benchmark.data.remote.dto.BlockingConfigurationDto
+import com.arrestme.benchmark.data.remote.dto.ConversationDto
 import com.arrestme.benchmark.data.remote.dto.CounterofferProposalRequestDto
 import com.arrestme.benchmark.data.remote.dto.CreatePartnerPermissionRequestDto
 import com.arrestme.benchmark.data.remote.dto.CreateProposalRequestDto
 import com.arrestme.benchmark.data.remote.dto.DeviceAppCatalogDto
 import com.arrestme.benchmark.data.remote.dto.LiveSessionDashboardItemDto
+import com.arrestme.benchmark.data.remote.dto.MessageDto
 import com.arrestme.benchmark.data.remote.dto.PartnerDiscoveryResponseDto
 import com.arrestme.benchmark.data.remote.dto.PartnerProfileDto
 import com.arrestme.benchmark.data.remote.dto.PartnershipDto
 import com.arrestme.benchmark.data.remote.dto.PendingCountsDto
 import com.arrestme.benchmark.data.remote.dto.ProposalDto
 import com.arrestme.benchmark.data.remote.dto.ScheduledArrestDto
+import com.arrestme.benchmark.data.remote.dto.StructuredRequestDto
+import com.arrestme.benchmark.data.remote.dto.TemporaryGrantDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -126,6 +130,14 @@ class BenchmarkViewModel(application: Application) : AndroidViewModel(applicatio
     val partnerDeviceAppCatalog: StateFlow<DeviceAppCatalogDto?> = app.cloudCommandCoordinator.partnerDeviceAppCatalog
     val isSyncingCommands: StateFlow<Boolean> = app.cloudCommandCoordinator.isSyncingCommands
     val coordinatorBanner: StateFlow<String?> = app.cloudCommandCoordinator.coordinatorBanner
+
+    // V0.6 Full Chat & Structured Requests StateFlows
+    val conversations: StateFlow<List<ConversationDto>> = app.partnerChatRepository.conversations
+    val activeConversation: StateFlow<ConversationDto?> = app.partnerChatRepository.activeConversation
+    val chatMessages: StateFlow<List<MessageDto>> = app.partnerChatRepository.messages
+    val activeTemporaryGrants: StateFlow<List<TemporaryGrantDto>> = app.partnerChatRepository.activeTemporaryGrants
+    val isChatLoading: StateFlow<Boolean> = app.partnerChatRepository.isLoading
+    val chatErrorMessage: StateFlow<String?> = app.partnerChatRepository.errorMessage
 
     init {
         refreshPermissions()
@@ -776,5 +788,93 @@ class BenchmarkViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun dismissCoordinatorBanner() {
         app.cloudCommandCoordinator.dismissBanner()
+    }
+
+    // V0.6 Chat & Structured Requests methods
+    fun refreshConversations() {
+        viewModelScope.launch {
+            app.partnerChatRepository.refreshConversations()
+        }
+    }
+
+    fun openConversationForPartnership(partnershipId: String, onOpened: (conversationId: String) -> Unit) {
+        viewModelScope.launch {
+            when (val res = app.partnerChatRepository.openConversationForPartnership(partnershipId)) {
+                is CloudResult.Success -> onOpened(res.data.id)
+                is CloudResult.Failure -> _statusBanner.value = res.error.message
+            }
+        }
+    }
+
+    fun selectConversation(conversationId: String) {
+        viewModelScope.launch {
+            app.partnerChatRepository.selectConversation(conversationId)
+        }
+    }
+
+    fun refreshChatMessages(conversationId: String) {
+        viewModelScope.launch {
+            app.partnerChatRepository.refreshMessages(conversationId)
+        }
+    }
+
+    fun sendChatMessage(conversationId: String, text: String) {
+        viewModelScope.launch {
+            app.partnerChatRepository.sendTextMessage(conversationId, text)
+        }
+    }
+
+    fun sendStructuredRequest(
+        conversationId: String,
+        requestType: String,
+        sessionId: String?,
+        targetPackage: String?,
+        durationMinutes: Int?,
+        messageText: String?
+    ) {
+        viewModelScope.launch {
+            app.partnerChatRepository.sendStructuredRequest(
+                conversationId = conversationId,
+                requestType = requestType,
+                sessionId = sessionId,
+                targetPackage = targetPackage,
+                durationMinutes = durationMinutes,
+                messageText = messageText
+            )
+        }
+    }
+
+    fun respondToStructuredRequest(requestId: String, decision: String, reason: String?) {
+        viewModelScope.launch {
+            app.partnerChatRepository.respondToStructuredRequest(requestId, decision, reason)
+        }
+    }
+
+    fun cancelStructuredRequest(requestId: String) {
+        viewModelScope.launch {
+            app.partnerChatRepository.cancelStructuredRequest(requestId)
+        }
+    }
+
+    fun markConversationRead(conversationId: String, lastReadMessageId: String) {
+        viewModelScope.launch {
+            app.partnerChatRepository.markConversationRead(conversationId, lastReadMessageId)
+        }
+    }
+
+    fun loadActiveTemporaryGrants(sessionId: String) {
+        viewModelScope.launch {
+            app.partnerChatRepository.loadActiveTemporaryGrants(sessionId)
+        }
+    }
+
+    fun revokeTemporaryGrant(sessionId: String, grantId: String) {
+        viewModelScope.launch {
+            app.partnerChatRepository.revokeTemporaryGrant(sessionId, grantId)
+        }
+    }
+
+    fun dismissChatError() {
+        app.partnerChatRepository.clearError()
     }
 }
