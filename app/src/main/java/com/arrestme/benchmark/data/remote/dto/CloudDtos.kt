@@ -537,9 +537,9 @@ data class PaginatedScheduledArrestsDto(
 data class ArrestSessionDto(
     val sessionId: String,
     val localSessionId: String? = null,
-    val ownerUserId: String,
-    val targetDeviceId: String,
-    val initiatedByUserId: String,
+    val ownerUserId: String = "",
+    val targetDeviceId: String = "",
+    val initiatedByUserId: String = "",
     val authorizationId: String? = null,
     val sessionType: String = "PARTNER_ARREST",
     val goal: String = "Focus Session",

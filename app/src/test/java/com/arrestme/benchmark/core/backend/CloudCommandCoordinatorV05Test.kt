@@ -678,14 +678,14 @@ class CloudCommandCoordinatorV05Test {
         // 3. Response for acknowledgeSession (ACCEPTED -> PREPARING)
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(
-                """{ "session": { "sessionId": "$cloudSessionId", "status": "DELIVERED", "remoteExecutionPhase": "EXECUTING" } }"""
+                """{ "session": { "sessionId": "$cloudSessionId", "ownerUserId": "${harness.myUserId}", "targetDeviceId": "${harness.myDeviceId}", "initiatedByUserId": "${harness.partnerUserId}", "status": "DELIVERED", "remoteExecutionPhase": "EXECUTING" } }"""
             )
         )
 
         // 4. Response for acknowledgeSession (STARTED -> ACTIVE)
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(
-                """{ "session": { "sessionId": "$cloudSessionId", "status": "ACTIVE", "remoteExecutionPhase": "ACTIVE" } }"""
+                """{ "session": { "sessionId": "$cloudSessionId", "ownerUserId": "${harness.myUserId}", "targetDeviceId": "${harness.myDeviceId}", "initiatedByUserId": "${harness.partnerUserId}", "status": "ACTIVE", "remoteExecutionPhase": "ACTIVE" } }"""
             )
         )
 
