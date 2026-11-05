@@ -692,7 +692,7 @@ class CloudCommandCoordinatorV05Test {
         // 5. Response for acknowledgeCommand (EXECUTED)
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(
-                """{ "command": { "commandId": "$commandId", "status": "EXECUTED" }, "idempotentReplay": false }"""
+                """{ "command": { "commandId": "$commandId", "targetDeviceId": "${harness.myDeviceId}", "issuedByUserId": "${harness.partnerUserId}", "commandType": "START_ARREST", "status": "EXECUTED" }, "idempotentReplay": false }"""
             )
         )
 
